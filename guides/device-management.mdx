@@ -1,0 +1,83 @@
+---
+title: "Discover and Manage Roku and Fire TV Devices"
+sidebarTitle: "Device Management"
+description: "Automatically scan your LAN for Roku and Fire TV devices via SSDP, or add devices manually by IP. Manage saved devices and Fire TV ADB setup."
+---
+
+PC Caster discovers Roku and Fire TV devices on your local network using SSDP multicast — the same protocol smart TV remotes and casting apps use. When it finds a Roku, it queries the Roku ECP API for a friendly device name. All devices, whether discovered automatically or added by hand, are saved to `~/.pc_caster.json` and restored the next time you open the app.
+
+## Auto scan
+
+Click **↺ Scan** to scan your network. PC Caster sends two SSDP `M-SEARCH` multicast messages to `239.255.255.250:1900`:
+
+- `ST: roku:ecp` — targets Roku devices
+- `ST: urn:dial-multiscreen-org:service:dial:1` — targets Fire TV and other DIAL-compatible devices
+
+The scan runs for 4 seconds (`SSDP_TIMEOUT`) while it waits for devices to respond. For each Roku IP that replies, PC Caster calls `GET http://<ip>:8060/query/device-info` to retrieve the device's user-assigned name (or model name as a fallback). Fire TV devices are listed as `Fire TV (<ip>)`.
+
+Once the scan completes, the device list is refreshed and any device that was selected before the scan is automatically re-selected.
+
+### Device list columns
+
+| Column | What it shows |
+|---|---|
+| **Device Name** | Friendly name from Roku ECP, or `Fire TV (<ip>)` for Fire TV devices |
+| **Type** | `Roku` or `Fire TV` |
+| **IP Address** | The device's IP address on your LAN |
+
+## Add a device manually
+
+If auto-scan doesn't find your device — for example because it's on a different subnet or has network isolation enabled — click **＋ Add IP**.
+
+<Steps>
+  <Step title="Open the Add IP dialog">
+    Click **＋ Add IP** in the toolbar above the device list.
+  </Step>
+  <Step title="Enter the device IP address">
+    Type the IP address of your device. For a Roku, find it at **Settings → Network → About** on the TV.
+  </Step>
+  <Step title="Select the device type">
+    Choose **Roku** or **Fire TV** using the radio buttons.
+  </Step>
+  <Step title="Click Add Device">
+    Click **Add Device** (or press **Enter**). For Roku, PC Caster immediately queries ECP for the device name. The device appears in the list and is saved automatically.
+  </Step>
+</Steps>
+
+Manual devices are persisted to `~/.pc_caster.json` under the `manual_devices` key and reappear after every restart — you only need to add them once.
+
+## Fire TV support
+
+Fire TV devices are discovered via the DIAL SSDP target. Casting to Fire TV requires a one-time ADB setup because PC Caster uses ADB shell commands to deliver the stream URL.
+
+<Accordion title="Fire TV ADB setup (one time)">
+
+**On your Fire TV:**
+
+1. Go to **Settings → My Fire TV → About** and click the **Build** entry 7 times to unlock Developer Options.
+2. Go to **Settings → My Fire TV → Developer Options**.
+   - Set **ADB Debugging** → **ON**
+   - Set **Apps from Unknown Sources** → **ON**
+
+**On your Windows PC:**
+
+3. Download **Android Platform Tools** (which includes `adb.exe`) from [developer.android.com/tools/releases/platform-tools](https://developer.android.com/tools/releases/platform-tools).
+4. Extract the zip to a folder, for example `C:\adb`.
+5. Add that folder to your **PATH**:
+   - Search for **Environment Variables** in the Start menu
+   - Edit the **Path** variable under **User variables**
+   - Click **New** and enter `C:\adb`
+   - Click **OK** and close all dialogs
+6. Reopen PC Caster and click **▶ Cast to TV**.
+
+A confirmation prompt will appear on the Fire TV screen the first time you connect — select **Allow**.
+
+</Accordion>
+
+<Tip>
+  If your Roku doesn't appear in scans, it may be on a different subnet or have network isolation enabled. Use **＋ Add IP** and enter the IP shown at **Settings → Network → About** on the Roku.
+</Tip>
+
+<Note>
+  Manual devices persist across sessions in `~/.pc_caster.json`. To remove a manually added device, open that file in a text editor and delete the corresponding entry from the `manual_devices` object, then restart PC Caster.
+</Note>

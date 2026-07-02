@@ -1,20 +1,65 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "PC Caster: Cast HLS Streams from Windows to Roku TV"
+sidebarTitle: "Home"
+description: "PC Caster finds live .m3u8 streams behind web pages, proxies them through a Chrome TLS fingerprint, and plays them on your Roku TV — no phone required."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+PC Caster is a Windows desktop app that lets you cast live HLS (`.m3u8`) streams from your PC to a Roku TV on the same network. It handles everything phones can't: it sniffs the real stream URL out of a web page, works around the Referer and TLS protections those streams use, and drives a custom Roku channel it installs and controls for you.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Python, run run.bat, and get the app running in under five minutes.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Find your first stream and cast it to your TV in five steps.
+  </Card>
+  <Card title="Roku TV Setup" icon="tv" href="/setup/roku-developer-mode">
+    Enable Developer Mode on your Roku and install the PC Caster channel.
+  </Card>
+  <Card title="Find Streams" icon="magnifying-glass" href="/guides/find-streams">
+    Use the built-in browser scanner to capture .m3u8 URLs from any page.
+  </Card>
+</CardGroup>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## How PC Caster works
+
+Most live stream sites protect their `.m3u8` files: they check the HTTP `Referer` header and the TLS fingerprint of the client. A Roku TV (or VLC with a raw URL) fails both checks and gets a 403. PC Caster solves this with a three-part pipeline running entirely on your PC.
+
+<Steps>
+  <Step title="Find the stream">
+    Click **🔍 Find .m3u8** and paste the streaming page URL. A real Chromium browser opens — click the server you want and press play. PC Caster watches the network traffic and captures the `.m3u8` URL plus the `Referer` header the player sent.
+  </Step>
+  <Step title="Proxy it locally">
+    PC Caster starts a local HTTP server on port **8011**. Every request from the Roku is re-fetched from the CDN using `curl_cffi` (which impersonates Chrome's TLS/JA3 fingerprint) with the captured `Referer` injected. Playlist files are rewritten so all segment and key URLs route back through the proxy too.
+  </Step>
+  <Step title="Cast to your TV">
+    PC Caster launches its custom **PC Caster** Roku channel via the Roku ECP API and hands it the proxy URL (e.g. `http://192.168.1.50:8011/p.m3u8?...`). The Roku plays plain HTTP from your PC — no special headers needed.
+  </Step>
+</Steps>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Stream Scanner" icon="radar" href="/guides/find-streams">
+    Headless Chromium (Playwright) watches every network request and surfaces all `.m3u8` URLs with their Referer headers.
+  </Card>
+  <Card title="HLS Proxy" icon="shield-halved" href="/internals/hls-proxy">
+    Spoofs Chrome's TLS fingerprint via curl_cffi and injects captured Referer/Origin headers so any device can play locked streams.
+  </Card>
+  <Card title="Custom Roku Channel" icon="satellite-dish" href="/internals/roku-channel">
+    A sideloaded BrightScript channel the app installs once and controls via ECP deep-link and /input on every cast.
+  </Card>
+  <Card title="Auto Device Discovery" icon="network-wired" href="/guides/device-management">
+    SSDP scan finds Roku and Fire TV devices on your LAN automatically, with manual IP fallback.
+  </Card>
+  <Card title="PC Test Mode" icon="desktop" href="/guides/test-on-pc">
+    Preview the proxied stream in VLC on your PC before sending it to the TV.
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/reference/troubleshooting">
+    Common failure modes with clear fixes — firewall rules, expired tokens, missing Playwright, and more.
+  </Card>
+</CardGroup>
+
+<Note>
+  PC Caster is a Windows-only application. It uses Windows-specific features including the taskbar AppUserModelID, Windows Firewall rule management via `netsh`, and `pythonw.exe` for windowless launch.
+</Note>

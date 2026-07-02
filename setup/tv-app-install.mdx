@@ -1,0 +1,114 @@
+---
+title: "Install the PC Caster Channel on Your Roku"
+sidebarTitle: "TV App Install"
+description: "Sideload the PC Caster BrightScript channel onto your Roku TV using the 📺 TV App dialog. Requires Developer Mode to be enabled first."
+---
+
+When you click **📺 TV App** in PC Caster, the app zips up the `roku_receiver/` folder (the BrightScript/SceneGraph source of the PC Caster channel) and uploads it to your Roku's built-in developer web server over your local network. Once installed, the **PC Caster** channel appears on your Roku Home screen and the app can launch and control it directly via the Roku ECP API — no Roku account, no phone, and no Channel Store involved.
+
+<Note>
+  Developer Mode must be enabled on your Roku before you can install the channel. If you haven't done that yet, see [Enable Roku Developer Mode](/setup/roku-developer-mode) first.
+</Note>
+
+## Install the channel
+
+<Steps>
+  <Step title="Open the TV App dialog">
+    In PC Caster, click the **📺 TV App** button in the toolbar at the top of the device list. The **Set up your TV App** dialog opens.
+  </Step>
+
+  <Step title="Enter the Roku IP address">
+    Type your Roku's local IP address into the **Roku IP** field.
+
+    To find it on the TV: go to **Settings → Network → About** — the IP address is listed there. It will look like `192.168.x.x`.
+
+    If you already selected your Roku in the device list, PC Caster will pre-fill the IP for you.
+  </Step>
+
+  <Step title="Enter the developer password">
+    Type the developer password you created when enabling Developer Mode into the **Dev password** field. This is the password that protects the Roku dev web server — it is not your Roku account password.
+  </Step>
+
+  <Step title="Click Install / Update channel">
+    Click **Install / Update channel**. PC Caster will:
+
+    1. Build a `.zip` of the `roku_receiver/` channel source.
+    2. POST the zip to `http://<Roku-IP>/plugin_install` using HTTP Digest authentication.
+    3. Display a status message in the dialog.
+
+    The upload typically completes in a few seconds on a local network.
+  </Step>
+
+  <Step title="Wait for the confirmation message">
+    When the install succeeds the dialog shows:
+
+    **✓ Channel installed on the Roku.**
+
+    The **PC Caster** channel now appears on your Roku Home screen. If it doesn't appear immediately, press **Home** on your remote to refresh the screen.
+  </Step>
+
+  <Step title="Set the receiver mode to My TV App (recommended)">
+    In the same dialog, find the **When casting to Roku, use:** section and make sure **My TV App (recommended)** is selected. Click **Save choice** (or it is saved automatically when you install).
+
+    This tells PC Caster to drive your custom channel rather than the built-in Roku Media Player or a third-party channel.
+  </Step>
+</Steps>
+
+## Receiver mode options
+
+The TV App dialog lets you choose which receiver PC Caster uses when you click **▶ Cast to TV**:
+
+| Mode | Description |
+|---|---|
+| **My TV App (recommended)** | The custom PC Caster channel you just installed. It receives the proxied `.m3u8` URL directly from the app and plays it reliably, including header-locked streams routed through the local proxy. |
+| **Roku Media Player** | The built-in Roku channel (ID `2285`/`2213`). It cannot send custom HTTP headers, so it will fail with a 403 on any stream that requires a `Referer`. Use only for plain, unprotected URLs. |
+| **Castify channel** | Drives the stock Castify channel (ID `651775`) via ECP `/input`. This is experimental and may not play — keep it as a last resort. |
+
+## Under the hood: what `sideload()` does
+
+PC Caster calls `roku_deploy.sideload()` to perform the upload. Here is the full function:
+
+```python roku_deploy.py
+def sideload(ip: str, password: str, zip_bytes: bytes | None = None) -> tuple[bool, str]:
+    """
+    Upload + install the channel to a Developer-Mode Roku.
+    Returns (ok, message). 'user' is always 'rokudev'.
+    """
+    if zip_bytes is None:
+        zip_bytes = build_zip()
+
+    url = f"http://{ip}/plugin_install"
+    auth = HTTPDigestAuth("rokudev", password)
+    files = {"archive": ("channel.zip", zip_bytes, "application/zip")}
+    data = {"mysubmit": "Install"}
+
+    try:
+        r = requests.post(url, auth=auth, files=files, data=data, timeout=30)
+    except Exception as e:
+        return False, f"Could not reach the Roku dev server at http://{ip} ({e}). " \
+                      "Is Developer Mode enabled and the IP correct?"
+
+    if r.status_code == 401:
+        return False, "Dev password rejected (HTTP 401). Check the password you " \
+                      "set when enabling Developer Mode."
+    if r.status_code != 200:
+        return False, f"Sideload failed (HTTP {r.status_code})."
+    ...
+```
+
+Key points: the HTTP username is always `rokudev` (hard-coded by Roku's developer server spec); the password is what you set during Developer Mode setup; and the endpoint is always `http://<ip>/plugin_install` — port 80, plain HTTP.
+
+<Tip>
+  You can click **Install / Update channel** at any time to push an updated version of the channel to the Roku. The existing channel is replaced in place — no need to uninstall it first.
+</Tip>
+
+## Troubleshooting
+
+**HTTP 401 — dev password rejected.**
+The password you entered does not match the one you set on the Roku. Re-open the Developer Settings screen on the TV (Home ×3 → Up ×2 → Right → Left → Right → Left → Right) to reset or confirm the password.
+
+**"Could not reach the Roku dev server" / can't connect.**
+Either Developer Mode is not fully enabled, the Roku IP is wrong, or the PC and Roku are on different networks. Verify the IP at **Settings → Network → About** on the TV and confirm both devices are on the same Wi-Fi.
+
+**"Roku reported an install error."**
+The SDK license agreement was not accepted during Developer Mode setup. Re-run the Developer Mode key sequence, re-enable Developer Mode, and make sure you accept the agreement before proceeding.

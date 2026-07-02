@@ -1,47 +1,91 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with PC Caster in 5 Steps"
+sidebarTitle: "Quickstart"
+description: "From a fresh install to watching your first stream on TV: install, set up Roku Developer Mode, find a stream, and cast it in under 10 minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+This guide walks you through finding a live `.m3u8` stream on a web page and watching it on your Roku TV — from a fresh PC Caster install to active playback in under 10 minutes. By the end you will have the PC Caster channel installed on your Roku, the HLS proxy running on your PC, and your first stream playing on the big screen.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+## Before You Start
 
-## Prerequisites
+Make sure you have the following ready:
 
-Before you begin, you must have:
+- **PC Caster installed** on your Windows PC and launchable via `run.bat` or `PC Caster.vbs` (see [Installation](/installation))
+- **Roku TV on the same LAN or Wi-Fi** as your PC
+- **Roku in Developer Mode** with the PC Caster channel installed — this is a one-time TV setup covered in the [Roku Developer Mode guide](/setup/roku-developer-mode)
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+## The 5-Step Daily Workflow
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Launch PC Caster">
+    Double-click **`PC Caster.vbs`** (or **`run.bat`** if you need to update dependencies first). The PC Caster window opens with a dark GitHub-style UI. The status bar at the bottom reads **"Scanning your network…"** while it searches for devices via SSDP.
 
-    ```bash
-    npm install your-package
-    ```
+    <Tip>
+      Pin `PC Caster.vbs` to your taskbar or run **`Create Desktop Shortcut.bat`** once to get a branded Desktop icon for quick access.
+    </Tip>
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+  <Step title="Select your Roku device">
+    Once scanning finishes, your Roku TV should appear in the **Devices** list with its friendly name (e.g. `Living Room TV`), type (`Roku`), and IP address.
 
-    ```bash
-    your-cli init
-    ```
+    - If your device appears, **click it** to select it.
+    - If the list is empty, click **＋ Add IP** and type your Roku's IP address manually. You can find the IP on the TV at *Settings → Network → About*.
+
+    With the device selected, PC Caster knows which IP to target for both the firewall rule and the ECP channel launch.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+  <Step title="Find the .m3u8 stream">
+    In the **URL TO CAST** field, paste the **streaming page URL** — the web page that contains the video player (not the raw `.m3u8` link itself). Then click **🔍 Find .m3u8**.
 
-    ```bash
-    your-cli start
-    ```
+    A real Chromium browser window opens pointing to that page. In the browser:
+
+    1. Click the **server or quality** you want to watch (e.g. TSN 4, FOX, ITV1).
+    2. Press play in the video player if it doesn't start automatically.
+
+    As soon as the player requests the stream, PC Caster's scanner captures the `.m3u8` URL and the `Referer` header in the background. Detected streams appear in the **Stream scanner** dialog in real time.
+
+    <Tip>
+      Use **Test on PC (VLC)** to confirm the stream plays through the proxy before sending it to the TV. If it works in VLC, it will work on the Roku.
+    </Tip>
+  </Step>
+  <Step title="Select the stream and confirm">
+    In the **Stream scanner** dialog, look for the **`index.m3u8`** entry — this is the adaptive-bitrate master playlist and gives the Roku the best quality selection. Click it to highlight it, then click **Use selected**.
+
+    The scanner closes, the `.m3u8` URL is placed in the URL field, and the status bar updates to **"Selected stream: [name] — ready to cast."**
+
+    *(Optional)* Click **🖥 Test on PC** to open the proxied stream in VLC on your PC first and confirm the stream is live and the proxy is working correctly before sending it to the TV.
+  </Step>
+  <Step title="Cast to TV">
+    Click the large **▶ Cast to TV** button. PC Caster will:
+
+    1. Start the local HLS proxy on port **8011** (adding a Windows Firewall inbound rule automatically if needed — approve the UAC prompt).
+    2. Build the proxied URL (e.g. `http://192.168.1.50:8011/p.m3u8?...`).
+    3. Connect to the Roku via ECP and launch the **PC Caster** channel with the proxy URL.
+
+    Within a few seconds, the PC Caster channel opens on your TV and playback begins. The status bar updates to **"✓ Now playing on [device name]"**.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Understanding the Status Bar
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+While a stream is active, the bottom-right of the PC Caster window shows a live proxy indicator:
+
+| Status | Meaning |
+|---|---|
+| `○ Proxy off` | No stream has been cast yet, or the proxy was stopped. |
+| `● Proxy ready (idle)` | The proxy is running but the Roku hasn't pulled a segment in the last 6 seconds. |
+| `⚡ Streaming to TV · N reqs` | The Roku is actively pulling playlist updates and segments. *N* is the total request count since the proxy started. |
+
+The **`⚡ Streaming to TV · N reqs`** indicator is your confirmation that the proxy is healthy and the Roku is receiving data. If the number stops incrementing, the stream may have stalled.
+
+## Keep PC Caster Open While Watching
+
+The HLS proxy runs **inside the PC Caster process**. Closing the app while streaming will immediately stop playback on the TV. Minimise the window instead — PC Caster uses almost no CPU when the proxy is simply passing through segments.
+
+<Warning>
+  If playback stops mid-stream, the stream's **session token has likely expired** — many CDNs rotate tokens every 30–90 minutes. You will see `proxy upstream HTTP 403` in the log. Click **🔍 Find .m3u8** again on the same page to capture a fresh URL and token, then click **▶ Cast to TV** again.
+</Warning>
+
+<Note>
+  The first time you cast from a new PC, PC Caster will trigger a **UAC (User Account Control) prompt** to add a Windows Firewall inbound rule for TCP port 8011. This is required so the Roku can reach the proxy on your PC. You only need to approve this once.
+</Note>
+
+For the one-time Roku Developer Mode setup and PC Caster channel installation, see the [Roku Developer Mode guide](/setup/roku-developer-mode).

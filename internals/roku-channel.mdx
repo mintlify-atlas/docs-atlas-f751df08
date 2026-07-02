@@ -1,0 +1,201 @@
+---
+title: "PC Caster Roku Channel: BrightScript Architecture"
+sidebarTitle: "Roku Channel"
+description: "The PC Caster Roku channel is a sideloaded BrightScript SceneGraph app controlled via Roku ECP. It plays any HLS or MP4 URL handed to it via launch or /input."
+---
+
+The Roku side of PC Caster is a minimal BrightScript SceneGraph channel that does one thing — play any video URL it receives from the PC via the Roku External Control Protocol (ECP). The channel is sideloaded automatically by the app on first cast, lives in the `roku_receiver/` directory, and is driven entirely from Python without any user interaction on the TV.
+
+## Channel manifest
+
+```ini roku_receiver/manifest
+title=PC Caster
+major_version=1
+minor_version=1
+build_version=00001
+mm_icon_focus_hd=pkg:/images/icon_focus_hd.png
+mm_icon_focus_sd=pkg:/images/icon_focus_sd.png
+splash_screen_hd=pkg:/images/splash_hd.png
+splash_screen_sd=pkg:/images/splash_sd.png
+splash_color=#0d1117
+ui_resolutions=fhd
+```
+
+The manifest declares the channel as a full-HD SceneGraph app with a dark splash screen (`#0d1117`). Standard and HD icon variants are included so the channel displays correctly on older Roku models.
+
+## Entry point: `main.brs`
+
+`main.brs` is the application entry point. It creates the `roSGScreen`, shows it, and sets up two communication channels: the `launchArgs` field (populated from the ECP `/launch` deep-link parameters) and an `roInput` object (which receives subsequent `/input` messages while the channel is already running).
+
+```brightscript roku_receiver/source/main.brs
+sub Main(args as Dynamic)
+    screen = CreateObject("roSGScreen")
+    m.port = CreateObject("roMessagePort")
+    screen.setMessagePort(m.port)
+    scene = screen.CreateScene("MainScene")
+    screen.show()
+    if args <> invalid then
+        scene.setField("launchArgs", args)
+    end if
+    input = CreateObject("roInput")
+    input.setMessagePort(m.port)
+    while true
+        msg = wait(0, m.port)
+        mt = type(msg)
+        if mt = "roSGScreenEvent" then
+            if msg.isScreenClosed() then return
+        else if mt = "roInputEvent" then
+            if msg.isInput() then
+                scene.setField("ecpInput", msg.getInfo())
+            end if
+        end if
+    end while
+end sub
+```
+
+The message loop handles exactly two event types:
+
+| Event type | Handling |
+|------------|----------|
+| `roSGScreenEvent.isScreenClosed()` | The user pressed the Back/Home button — exits immediately. |
+| `roInputEvent.isInput()` | New URL pushed from the PC via `POST /input` — passed to the scene via the `ecpInput` field. |
+
+## Scene logic: `MainScene.brs`
+
+### `init()`
+
+Locates the `video` (`roSGNode` of type `Video`) and `status` (`Label`) nodes defined in the SceneGraph XML, observes the video's `state` field, and sets focus on the video node so remote control events are forwarded to it.
+
+```brightscript roku_receiver/components/MainScene.brs
+sub init()
+    m.video  = m.top.findNode("video")
+    m.status = m.top.findNode("status")
+    m.video.observeField("state", "onVideoState")
+    m.video.setFocus(true)
+end sub
+```
+
+### `onLaunchArgs()` / `onEcpInput()`
+
+Field observers that fire when `main.brs` writes to `launchArgs` or `ecpInput`. Both delegate directly to `playFromArgs()`.
+
+### `playFromArgs(args)`
+
+Reads the URL and format from the argument associative array. The URL is checked under three different key names in priority order, for compatibility with different ECP callers:
+
+```brightscript roku_receiver/components/MainScene.brs
+sub playFromArgs(args as Object)
+    if args = invalid then return
+
+    url = ""
+    if args.contentId <> invalid and args.contentId <> "" then url = args.contentId
+    if url = "" and args.url <> invalid then url = args.url
+    if url = "" and args.u   <> invalid then url = args.u
+    if url = "" then return
+
+    fmt = "hls"
+    if args.mediaType   <> invalid and args.mediaType   <> "" then fmt = args.mediaType
+    if args.videoFormat <> invalid and args.videoFormat <> "" then fmt = args.videoFormat
+
+    playUrl(url, fmt)
+end sub
+```
+
+The format similarly falls back through `mediaType` → `videoFormat` → `"hls"`.
+
+### `playUrl(url, fmt)`
+
+Creates a `ContentNode`, sets its `url`, `streamFormat`, and `title`, assigns it to `m.video.content`, and starts playback with `m.video.control = "play"`.
+
+```brightscript roku_receiver/components/MainScene.brs
+sub playUrl(url as String, fmt as String)
+    m.status.text = "Loading: " + url
+
+    content = CreateObject("roSGNode", "ContentNode")
+    content.url = url
+    content.streamFormat = fmt
+    content.title = "PC Caster"
+    content.playStart = 0
+
+    m.video.content = content
+    m.video.control = "play"
+end sub
+```
+
+### `onVideoState()`
+
+Observes the video `state` field and manages the status label:
+
+| State | Behaviour |
+|-------|-----------|
+| `"playing"` | Hides the status label. |
+| `"error"` | Shows `"Playback error — check the proxy is running on the PC."` |
+| Any other | Shows `"Status: <state>"` (e.g. `"buffering"`, `"paused"`). |
+
+## ECP control from Python
+
+`roku_deploy.py` exposes three functions for driving the channel from Python.
+
+### Sideloading
+
+```python roku_deploy.py
+def build_zip() -> bytes:
+    """Zip the roku_receiver folder (manifest must be at the archive root)."""
+
+def sideload(ip: str, password: str, zip_bytes: bytes | None = None) -> tuple[bool, str]:
+    """
+    Upload + install the channel to a Developer-Mode Roku.
+    Returns (ok, message). 'user' is always 'rokudev'.
+    """
+```
+
+`build_zip()` walks `roku_receiver/` and packs every file into a ZIP archive with `manifest` at the root (the Roku installer requires this). `sideload()` POSTs the archive to the Roku developer web server using HTTP Digest auth:
+
+```
+POST http://<roku-ip>/plugin_install
+Authorization: Digest username="rokudev", ...
+Content-Type: multipart/form-data
+```
+
+### Launching and updating
+
+```python roku_deploy.py
+DEV_APP_ID = "dev"  # sideloaded channels always launch as 'dev'
+
+def launch(ip: str, stream_url: str, fmt: str = "hls") -> tuple[bool, str]:
+    enc = quote(stream_url, safe="")
+    ecp = (f"http://{ip}:8060/launch/{DEV_APP_ID}"
+           f"?contentId={enc}&mediaType={fmt}")
+    r = requests.post(ecp, timeout=6)
+    return r.status_code == 200, "Launched PC Caster on the TV."
+
+def input_play(ip: str, stream_url: str, fmt: str = "hls") -> tuple[bool, str]:
+    enc = quote(stream_url, safe="")
+    ecp = f"http://{ip}:8060/input?contentId={enc}&mediaType={fmt}"
+    r = requests.post(ecp, timeout=6)
+    return (r.status_code == 200), f"HTTP {r.status_code}"
+```
+
+`launch()` starts the channel from scratch (or restarts it if it was on a different screen). `input_play()` pushes a new URL to the channel while it's already running — the channel switches to the new stream without any visible interruption to the Roku home screen.
+
+### Checking installation
+
+```python roku_deploy.py
+def is_installed(ip: str, password: str) -> bool:
+    """Best-effort check that a dev channel is present."""
+    try:
+        r = requests.get(f"http://{ip}:8060/query/apps", timeout=4)
+        return 'id="dev"' in (r.text or "")
+    except Exception:
+        return False
+```
+
+`is_installed()` queries the ECP `/query/apps` endpoint and scans the XML for `id="dev"`. If the channel is absent, the main app calls `sideload()` automatically before the next `launch()`.
+
+<Note>
+  Sideloaded channels always have the app ID `dev`. This means only one sideloaded channel can exist at a time on a Roku — installing PC Caster will replace any other sideloaded channel you had previously.
+</Note>
+
+<Tip>
+  The channel auto-installs on first cast if it's missing. You don't need to manually re-install after a Roku update unless the dev channel was wiped. PC Caster checks `is_installed()` before every cast and re-sideloads silently if needed.
+</Tip>

@@ -1,0 +1,142 @@
+---
+title: "HLS Proxy: Chrome TLS Spoofing and Playlist Rewriting"
+sidebarTitle: "HLS Proxy"
+description: "The hls_proxy.py module implements a local ThreadingHTTPServer that re-fetches HLS streams with a Chrome TLS fingerprint and rewrites .m3u8 playlists to stay proxied."
+---
+
+`hls_proxy.py` is the core of PC Caster's ability to play locked streams. It's a local HTTP server that acts as a transparent relay between the Roku and the CDN, adding the browser credentials the CDN requires. The Roku only ever speaks to `http://<LAN-IP>:8011` over plain HTTP — it never needs to send a custom `Referer`, and it never performs a TLS handshake with the CDN. Both of those problems are handled on the PC side, invisibly, on every request.
+
+## Public API
+
+### `HlsProxy`
+
+```python hls_proxy.py
+class HlsProxy:
+    def __init__(self, port: int = 8011): ...
+    def start(self, target_ip: str = "8.8.8.8") -> str: ...
+    def url_for(self, real_m3u8: str, referer: str) -> str: ...
+    @property
+    def running(self) -> bool: ...
+    @property
+    def requests_served(self) -> int: ...
+    def seconds_since_activity(self) -> float: ...
+    def stop(self): ...
+```
+
+#### `__init__(port)`
+
+Creates the proxy object. Does **not** start the server — no thread is launched and no port is bound. Call `start()` when you're ready to accept requests.
+
+- `port` (int) — TCP port the server will listen on. Default: `8011`.
+
+#### `start(target_ip)`
+
+Starts the `ThreadingHTTPServer` on `0.0.0.0:port`. Uses `lan_ip_towards(target_ip)` to determine which local network interface can reach the Roku, then builds the `public_origin` string the proxy encodes into rewritten playlist URLs. Idempotent — if the server is already running, returns the existing `public_origin` immediately.
+
+- `target_ip` (str) — the IP of the device that will consume the stream (e.g. the Roku's IP). Used only for interface selection; no connection is made to it. Default: `"8.8.8.8"`.
+- **Returns** `str` — the base origin reachable from the target device, e.g. `http://192.168.1.50:8011`.
+
+#### `url_for(real_m3u8, referer)`
+
+Encodes the upstream `.m3u8` URL and its `Referer` as base64url query parameters and returns the complete proxy URL that a Roku or VLC client should request instead of the raw CDN URL.
+
+- `real_m3u8` (str) — the actual CDN stream URL, e.g. `https://cdn.example.com/live/index.m3u8?token=xyz`.
+- `referer` (str) — the `Referer` header value the CDN expects, captured by the stream finder.
+- **Returns** `str` — a URL of the form `http://192.168.1.50:8011/p.m3u8?u=<b64>&r=<b64>`.
+
+#### `running`
+
+`True` if the server thread is active. `False` before the first `start()` call or after `stop()`.
+
+#### `requests_served`
+
+Count of GET requests handled since the last `start()`. Resets to zero each time the server restarts. The UI polls this value to update the `⚡ Streaming to TV · N reqs` indicator.
+
+#### `seconds_since_activity()`
+
+Returns the number of seconds elapsed since the last GET request was handled. Returns a very large number (`1e9`) if the proxy hasn't been started or hasn't served any requests yet. The UI uses this to distinguish between the proxy being idle (Roku not actively pulling) versus actively streaming (recent request within the last 6 seconds).
+
+#### `stop()`
+
+Calls `ThreadingHTTPServer.shutdown()` and clears the internal reference. After `stop()`, `running` returns `False` and `requests_served` returns `0`.
+
+---
+
+### `ensure_firewall_rule(port)`
+
+```python hls_proxy.py
+def ensure_firewall_rule(port: int) -> bool:
+    """Returns True if rule exists. Adds it via UAC prompt if missing."""
+```
+
+Checks whether a Windows Firewall inbound rule named `"PC Caster HLS Proxy"` already exists for the given port using `netsh advfirewall firewall show rule`. If the rule is missing, triggers a one-time UAC elevation prompt to add it via PowerShell (`Start-Process netsh ... -Verb RunAs`). This is the only action in PC Caster that requires administrator rights, and it only happens once.
+
+- `port` (int) — the TCP port to allow inbound. Matches whatever `HlsProxy` was configured with.
+- **Returns** `bool` — `True` if a rule already existed before this call; `False` if the rule was absent (regardless of whether the UAC prompt succeeded).
+
+---
+
+### `lan_ip_towards(target_ip)`
+
+```python hls_proxy.py
+def lan_ip_towards(target_ip: str) -> str:
+    """Pick the local IP on the interface that can reach target_ip."""
+```
+
+Opens a temporary UDP socket and "connects" it to `target_ip:80` without actually sending any packets. The OS selects the appropriate outbound interface, and `getsockname()` returns the local IP on that interface. Falls back to `127.0.0.1` on any error.
+
+- `target_ip` (str) — any IP that the OS needs to route to; the Roku IP works perfectly.
+- **Returns** `str` — the local LAN IP, e.g. `192.168.1.50`.
+
+---
+
+## Proxy URL format
+
+Every resource proxied by `hls_proxy.py` — playlists, segments, and AES keys — uses the same URL structure:
+
+| Component | Value |
+|-----------|-------|
+| Path | `/p` or `/p.m3u8` — the path just needs to start with `/p` |
+| `u` param | base64url-encoded upstream URL (no padding) |
+| `r` param | base64url-encoded Referer (optional; omitted for keyless streams) |
+
+The `.m3u8` extension in the path is cosmetic only. The handler detects the actual content type by checking for `#EXTM3U` magic bytes in the response body, not by the path extension.
+
+**Example:**
+
+```
+http://192.168.1.50:8011/p.m3u8?u=aHR0cHM6Ly9jZG4uZXhhbXBsZS5jb20vbGl2ZS9pbmRleC5tM3U4&r=aHR0cHM6Ly9zdHJlYW1zaXRlLmNvbS93YXRjaC8xMjM0NQ
+```
+
+---
+
+## Playlist rewriting (`_rewrite_playlist`)
+
+The most important function in the proxy is `_rewrite_playlist`. Without it, the Roku would receive the first playlist from the proxy, then immediately send the next request (for a variant stream or segment) directly to the CDN — bypassing the proxy and hitting the 403 wall.
+
+`_rewrite_playlist` iterates every line in the M3U8 text and rewrites every URI it finds:
+
+- **Lines starting with `#`:** left unchanged unless they contain a `URI="..."` attribute. Tags like `EXT-X-KEY` (AES encryption keys), `EXT-X-MEDIA`, and `EXT-X-MAP` embed child URLs this way. The inner URI is extracted, made absolute against the upstream base URL, and replaced with a proxy URL.
+- **Bare lines (segment paths):** treated as relative or absolute segment URIs. Each is resolved to an absolute URL with `urljoin(base_url, line)` and then wrapped in a proxy URL.
+
+### Example
+
+```m3u8 Before rewriting
+#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI="/keys/abc.key"
+../seg0.ts
+../seg1.ts
+```
+
+```m3u8 After rewriting
+#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI="http://192.168.1.50:8011/p.m3u8?u=<b64 key url>&r=<b64 referer>"
+http://192.168.1.50:8011/p.m3u8?u=<b64 seg0 url>&r=<b64 referer>
+http://192.168.1.50:8011/p.m3u8?u=<b64 seg1 url>&r=<b64 referer>
+```
+
+After rewriting, the Roku's video player pulls every subsequent request — variant playlists, segment playlists, individual `.ts` segments, and AES-128 decryption keys — through the proxy. The CDN sees a Chrome browser on every single request.
+
+<Note>
+  Segments are served as `video/mp2t` regardless of what the CDN labels them. Some CDNs mislabel `.ts` segments as `image/png` to evade filters; the proxy overrides the Content-Type so the Roku always receives a valid MIME type for its video decoder.
+</Note>

@@ -1,0 +1,96 @@
+{
+  "projectType": "general",
+  "projectName": "PC Caster",
+  "projectDescription": "A Windows desktop app that casts live HLS (.m3u8) streams from your PC to a Roku TV by finding streams via a headless browser, routing them through a local TLS-spoofing proxy, and controlling a custom sideloaded Roku channel.",
+  "theme": "palm",
+  "primaryColor": "#dedede",
+  "lightColor": "#fbde58",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Setup",
+            "pages": [
+              "setup/roku-developer-mode",
+              "setup/tv-app-install",
+              "setup/windows-firewall"
+            ]
+          },
+          {
+            "group": "Using PC Caster",
+            "pages": [
+              "guides/find-streams",
+              "guides/casting",
+              "guides/test-on-pc",
+              "guides/device-management"
+            ]
+          },
+          {
+            "group": "Troubleshooting & Reference",
+            "pages": [
+              "reference/troubleshooting",
+              "reference/configuration",
+              "reference/project-layout",
+              "reference/legal"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Internals",
+        "groups": [
+          {
+            "group": "Architecture",
+            "pages": [
+              "internals/how-it-works",
+              "internals/hls-proxy",
+              "internals/stream-finder",
+              "internals/roku-channel"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Automatic .m3u8 stream detection via headless Chromium browser (Playwright)",
+    "Local HLS proxy that spoofs Chrome TLS fingerprint (curl_cffi) and injects Referer headers",
+    "Custom sideloaded Roku channel (BrightScript) controlled via the Roku ECP API",
+    "SSDP-based automatic device discovery for Roku and Fire TV on the local network",
+    "One-click firewall rule creation for the proxy (UAC-prompted, Windows Firewall)",
+    "PC playback test mode via VLC before casting to TV",
+    "Clipboard auto-paste for detected URLs",
+    "Rotating log file for windowless debugging"
+  ],
+  "publicApiSurface": [
+    "find_streams(page_url, on_log, wait) -> list[dict]",
+    "find_streams_interactive(page_url, on_log, on_found, stop_event, max_seconds) -> list[dict]",
+    "HlsProxy.start(target_ip) -> str",
+    "HlsProxy.url_for(real_m3u8, referer) -> str",
+    "HlsProxy.running -> bool",
+    "HlsProxy.requests_served -> int",
+    "HlsProxy.seconds_since_activity() -> float",
+    "HlsProxy.stop()",
+    "ensure_firewall_rule(port) -> bool",
+    "roku_deploy.sideload(ip, password, zip_bytes) -> tuple[bool, str]",
+    "roku_deploy.launch(ip, stream_url, fmt) -> tuple[bool, str]",
+    "roku_deploy.is_installed(ip, password) -> bool",
+    "roku_deploy.input_play(ip, stream_url, fmt) -> tuple[bool, str]",
+    "roku_deploy.build_zip() -> bytes",
+    "setup_logging() -> Logger",
+    "run.bat (setup + launch)",
+    "PC Caster.vbs (windowless launcher)",
+    "Create Desktop Shortcut.bat (desktop icon creation)"
+  ]
+}

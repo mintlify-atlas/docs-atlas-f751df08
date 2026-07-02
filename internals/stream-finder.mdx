@@ -1,0 +1,131 @@
+---
+title: "Stream Finder: HLS URL Detection via Playwright"
+sidebarTitle: "Stream Finder"
+description: "stream_finder.py uses two strategies to find .m3u8 URLs on a page: a fast HTML regex scrape and a Playwright headless browser network interceptor."
+---
+
+`stream_finder.py` provides two functions for finding `.m3u8` HLS stream URLs on web pages, from a quick static scrape to a full interactive browser session that watches real network traffic. The static scrape is cheap and instant; the Playwright strategy is what actually works on modern streaming sites that build the stream URL dynamically in JavaScript and embed it in a video player. Critically, only the Playwright strategy captures the `Referer` header — the piece of information the proxy needs to authenticate with the CDN.
+
+## Public API
+
+### `find_streams(page_url, on_log, wait)`
+
+```python stream_finder.py
+def find_streams(page_url: str, on_log=None, wait: int = 20) -> list[dict]:
+    """
+    Return a de-duplicated list of .m3u8 stream descriptors found on page_url.
+    on_log(str) is an optional progress callback (safe to pass a GUI logger).
+    """
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `page_url` | `str` | The web page URL to scan — not the stream URL itself. |
+| `on_log` | `callable`, optional | Progress callback that receives status strings. Safe to wire directly to a GUI log widget. |
+| `wait` | `int` | Seconds to wait for the headless browser to observe network traffic. Default: `20`. |
+
+**Returns:** `list[dict]`, where each dict has:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `url` | `str` | The `.m3u8` URL. |
+| `referer` | `str` | The `Referer` header the browser sent with the request. |
+| `origin` | `str` | The `Origin` header. |
+| `label` | `str` | Short human-readable filename, e.g. `index.m3u8`. Capped at 48 characters. |
+
+**Behavior:** Runs Strategy 1 (HTML scrape) first, then Strategy 2 (Playwright headless browser). Results are deduplicated by URL — if the scrape and the browser find the same URL, only the Playwright entry is kept (it has the `Referer`). If `page_url` itself contains `.m3u8` in the path, the function returns it directly without scanning:
+
+```python stream_finder.py
+if _is_m3u8(page_url):
+    return [{
+        "url": page_url, "referer": "", "origin": "",
+        "label": _label_for(page_url),
+    }]
+```
+
+---
+
+### `find_streams_interactive(page_url, on_log, on_found, stop_event, max_seconds)`
+
+```python stream_finder.py
+def find_streams_interactive(
+    page_url, on_log, on_found, stop_event,
+    max_seconds: int = 180
+) -> list[dict]:
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `page_url` | `str` | The streaming page URL to open. |
+| `on_log` | `callable` | Progress callback. Also used for special token delivery — see below. |
+| `on_found` | `callable` | Called once per newly-discovered stream item (invoked from the worker thread). |
+| `stop_event` | `threading.Event` | Set this event to close the browser early and return results immediately. |
+| `max_seconds` | `int` | Hard timeout; the browser closes automatically after this many seconds. Default: `180`. |
+
+**Returns:** The full deduplicated list of stream dicts after the browser closes.
+
+**Behavior:** Opens a **visible** Chromium browser (`headless=False`) and navigates to `page_url`. The browser is launched with `--autoplay-policy=no-user-gesture-required` and `--mute-audio` so players can start without user interaction. A request listener attached to the main page — and to any new page opened in the same context — calls `on_found` immediately when a `.m3u8` URL is intercepted. Ad and popup tabs opened by the site are automatically closed every 500 ms so they don't bury the player window.
+
+The user's job is to click the server link inside the browser. Once the player fires its first `.m3u8` request, `on_found` delivers the item to the UI in real time.
+
+---
+
+## Two strategies
+
+### Strategy 1: HTML scrape (`_scrape_html`)
+
+The scrape strategy fetches the page source with `requests.get()` using a Chrome `User-Agent` and applies a single compiled regex:
+
+```python stream_finder.py
+M3U8_RE = re.compile(r"https?://[^\s'\"<>()]+\.m3u8[^\s'\"<>()]*", re.IGNORECASE)
+```
+
+Any full URL containing `.m3u8` found literally in the page HTML is returned as a result. Because no browser request was observed, `referer` and `origin` are empty in results from this strategy.
+
+**Limitations:** Most live streaming sites build the stream URL inside JavaScript at runtime and never put the CDN URL in the raw HTML. On those sites, the scrape finds nothing — which is why Strategy 2 always runs afterward.
+
+### Strategy 2: Playwright network sniff (`_sniff_browser` / `find_streams_interactive`)
+
+The browser strategy launches Chromium via `playwright.sync_api.sync_playwright()` and attaches a request handler before the page loads:
+
+```python stream_finder.py
+def _record(req):
+    url = req.url
+    if _is_m3u8(url) and url not in found:
+        h = req.headers
+        found[url] = {
+            "url":     url,
+            "referer": h.get("referer", ""),
+            "origin":  h.get("origin", ""),
+            "label":   _label_for(url),
+        }
+```
+
+`_is_m3u8(url)` checks for `.m3u8` in the URL **path** only — the portion before `?`. This prevents tokenised query strings (which often contain `.m3u8` as a substring of a parameter value) from causing false positives.
+
+In the headless variant (`_sniff_browser`), the function tries clicking common play-button selectors across all frames and waits for the player to fire a network request. Once at least one `.m3u8` is found, it lingers for an extra 2.5 seconds to collect variant quality renditions. In the interactive variant (`find_streams_interactive`), no auto-click is attempted — the user clicks the server themselves.
+
+---
+
+## Special log tokens
+
+`on_log` may receive two special string values instead of normal status messages. They indicate a missing dependency rather than a log line and should be handled separately in the caller:
+
+| Token | Meaning |
+|-------|---------|
+| `'PLAYWRIGHT_MISSING'` | The `playwright` Python package is not installed. Fix: `pip install playwright`. |
+| `'PLAYWRIGHT_NO_BROWSER'` | Package installed but Chromium binary not downloaded. Fix: `python -m playwright install chromium`. |
+
+The PC Caster UI detects these tokens and shows a dedicated setup dialog rather than displaying them as log text.
+
+<Note>
+  The User-Agent is set to a Chrome 124 desktop UA (`Mozilla/5.0 (Windows NT 10.0; Win64; x64) ... Chrome/124.0.0.0`). Many CDNs reject requests from the default `python-requests` UA, so this is required even for the static HTML scrape.
+</Note>
+
+<Tip>
+  Pass a `threading.Event` as `stop_event` to let your UI cancel the browser session cleanly without killing the process. Call `stop_event.set()` and the interactive loop exits at the next 500 ms polling tick, closes the browser, and returns whatever results it has collected so far.
+</Tip>

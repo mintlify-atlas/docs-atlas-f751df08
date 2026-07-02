@@ -1,0 +1,99 @@
+---
+title: "Windows Firewall Rule for the HLS Proxy"
+sidebarTitle: "Firewall Setup"
+description: "PC Caster automatically adds a Windows Firewall inbound rule for TCP port 8011 so your Roku can reach the local HLS proxy on your PC."
+---
+
+When you cast an HLS stream, your Roku TV fetches every playlist and video segment by making HTTP requests back to your Windows PC on **port 8011** — that is where the PC Caster local proxy is running. By default, Windows Firewall blocks all unsolicited inbound connections, which means the Roku's requests never arrive, the stream stalls, and the TV screen blinks and goes dark. To allow the Roku through, PC Caster needs an inbound firewall rule named **"PC Caster HLS Proxy"** that permits TCP traffic on port 8011 over the Private network profile.
+
+<Warning>
+  If you skip this step (or dismiss the UAC prompt), the TV will start playing, blink after a few seconds, and stop. A blinking TV that immediately stops is the **number-one symptom** of a missing firewall rule.
+</Warning>
+
+## How PC Caster handles it automatically
+
+The first time you click **▶ Cast to TV** with an HLS stream, PC Caster calls `ensure_firewall_rule(8011)` before launching the proxy. Here is the full function from `hls_proxy.py`:
+
+```python hls_proxy.py
+RULE_NAME = "PC Caster HLS Proxy"
+
+def ensure_firewall_rule(port: int) -> bool:
+    """
+    Make sure inbound TCP on `port` is allowed so the TV can reach the proxy.
+    Returns True if a rule already exists. If not, triggers ONE UAC prompt to
+    add it (best-effort). Windows-only; no-op elsewhere.
+    """
+    import subprocess
+    try:
+        check = subprocess.run(
+            ["netsh", "advfirewall", "firewall", "show", "rule",
+             f"name={RULE_NAME}"],
+            capture_output=True, text=True, timeout=8,
+        )
+        if RULE_NAME in (check.stdout or ""):
+            return True
+    except Exception:
+        return False
+
+    # Add the rule with an elevated one-shot (pops a UAC dialog).
+    add_args = (
+        f"advfirewall firewall add rule name='{RULE_NAME}' "
+        f"dir=in action=allow protocol=TCP localport={port} profile=private"
+    )
+    ps = f"Start-Process netsh -ArgumentList \"{add_args}\" -Verb RunAs -WindowStyle Hidden"
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                       capture_output=True, timeout=30)
+    except Exception:
+        pass
+    return False
+```
+
+What this does step-by-step:
+
+1. **Checks** whether the rule already exists by running `netsh advfirewall firewall show rule name="PC Caster HLS Proxy"`. If it does, the function returns immediately — no prompt, no work.
+2. **If the rule is missing**, it builds a `netsh` command to add it and runs it via PowerShell's `-Verb RunAs`, which triggers a **single UAC elevation prompt**. The PowerShell window is hidden (`-WindowStyle Hidden`) so only the UAC dialog appears.
+3. The rule is scoped to the **Private** network profile only — it does not open your PC on public Wi-Fi or domain networks.
+
+<Note>
+  The UAC prompt only appears once. After the rule is created it persists in Windows Firewall permanently, and PC Caster will skip this step on every subsequent cast.
+</Note>
+
+## Manual setup
+
+If you clicked **No** on the UAC prompt, or if you are running PC Caster as a standard user on a managed machine, the rule will not have been added automatically. You can add it manually from an **elevated** (Administrator) terminal.
+
+**PowerShell (recommended):**
+
+```powershell
+New-NetFirewallRule -DisplayName "PC Caster HLS Proxy" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8011 -Profile Private
+```
+
+**Command Prompt / `netsh` equivalent:**
+
+```batch
+netsh advfirewall firewall add rule name="PC Caster HLS Proxy" dir=in action=allow protocol=TCP localport=8011 profile=private
+```
+
+Run either command in a terminal opened with **Run as administrator**. You only need to run one of them — both create the same rule.
+
+## Verify the rule exists
+
+To confirm the rule was added successfully, open **Windows Defender Firewall with Advanced Security**:
+
+1. Press **Win + R**, type `wf.msc`, and press Enter.
+2. In the left panel, click **Inbound Rules**.
+3. Scroll or filter to find **PC Caster HLS Proxy**.
+4. The rule should show **Enabled: Yes**, **Action: Allow**, **Protocol: TCP**, **Local Port: 8011**, **Profile: Private**.
+
+Alternatively, run the following in any terminal (no elevation required) to check:
+
+```batch
+netsh advfirewall firewall show rule name="PC Caster HLS Proxy"
+```
+
+If the output includes `Action: Allow` and `LocalPort: 8011`, the rule is in place and the Roku will be able to reach your PC.
+
+<Note>
+  The rule only applies to the **Private** network profile. If your home Wi-Fi is classified as Public in Windows, either change the network profile to Private (Settings → Network & Internet → Wi-Fi → your network → set to Private) or add `Profile=Any` to the command above.
+</Note>

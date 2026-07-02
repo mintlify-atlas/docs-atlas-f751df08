@@ -1,0 +1,68 @@
+---
+title: "PC Caster Project Files and Folder Structure"
+sidebarTitle: "Project Layout"
+description: "A guide to every file and folder in the PC Caster project: what each Python module does, the Roku channel source, launchers, and generated assets."
+---
+
+PC Caster is a small, self-contained Python project. All components live in the same folder with no build step required beyond running `run.bat` once to install dependencies and generate icons. The Roku channel source is bundled alongside the Python code and is zipped and sideloaded automatically the first time you cast.
+
+## Files and folders
+
+| File / Folder | Purpose |
+|---|---|
+| `pc_caster.py` | Main application — Tkinter GUI, device discovery (SSDP), casting orchestration |
+| `stream_finder.py` | `.m3u8` stream detection — HTML scrape + Playwright headless browser sniff |
+| `hls_proxy.py` | Local HLS proxy — Chrome TLS impersonation, Referer injection, playlist rewriting |
+| `roku_deploy.py` | Roku channel build (zip), sideload (HTTP Digest), and ECP launch |
+| `logger.py` | Rotating log file setup, uncaught exception hook |
+| `make_icons.py` | Generates app and channel icons from the source design |
+| `requirements.txt` | Python dependency list (`requests`, `playwright`, `curl_cffi`, `Pillow`) |
+| `run.bat` | First-run setup script: pip install, playwright install, icon gen, launch |
+| `PC Caster.vbs` | Windowless launcher using `pythonw.exe` — no console window |
+| `Create Desktop Shortcut.bat` | Creates a branded Desktop shortcut (run once) |
+| `roku_receiver/` | Source for the PC Caster Roku channel (BrightScript + SceneGraph) |
+| `roku_receiver/manifest` | Roku channel manifest (title, version, icons, splash) |
+| `roku_receiver/source/main.brs` | Roku entry point — ECP deep-link and `/input` message loop |
+| `roku_receiver/components/MainScene.brs` | Video playback logic — plays the proxy URL via `roSGNode` VideoNode |
+| `roku_receiver/components/MainScene.xml` | SceneGraph scene layout |
+| `roku_receiver/images/` | HD and SD channel icons plus splash screens |
+| `assets/` | Generated icons: `app_icon.ico`, `app_icon.png`, `app_glyph.png` |
+| `pc_caster.log` | Runtime log (auto-created, self-trimming to ~256 KB) |
+
+## Module dependency diagram
+
+The four Python modules all report into the main application. No module imports another except through `pc_caster.py`.
+
+```
+pc_caster.py
+  ├── stream_finder.py   (playwright, requests)
+  ├── hls_proxy.py       (curl_cffi, http.server)
+  ├── roku_deploy.py     (requests, zipfile)
+  └── logger.py          (logging.handlers)
+```
+
+## Key module details
+
+### `pc_caster.py` — Main app
+
+Builds the Tkinter GUI (GitHub-dark colour palette), runs SSDP device discovery on a background thread, manages the config file at `~/.pc_caster.json`, and coordinates casting. Calls `HlsProxy.start()` before every HLS cast and passes the proxied URL to `roku_deploy.launch()`. Also polls the clipboard every 800 ms to auto-paste HTTP URLs into the URL field.
+
+### `hls_proxy.py` — Local HLS proxy
+
+Starts a `ThreadingHTTPServer` on `0.0.0.0:8011`. For every request it decodes the base64-encoded real URL and Referer from the query string, re-fetches the resource using `curl_cffi` impersonating Chrome's TLS/JA3 fingerprint, and injects `Referer` and `Origin` headers. If the response is an `.m3u8` playlist (`#EXTM3U`), every URI inside it is rewritten to route back through the proxy so segments also carry the Referer. Binary `.ts` segments are passed through as `video/mp2t`. The `ensure_firewall_rule()` function adds the Windows Firewall inbound rule via a one-shot UAC-elevated PowerShell command.
+
+### `stream_finder.py` — .m3u8 finder
+
+Opens a real Chromium browser via Playwright and intercepts all network requests. Captures any URL containing `.m3u8` along with the `Referer` the page's player used. The `find_streams_interactive()` function runs until cancelled or the 240-second timeout is reached, emitting discovered streams via a callback so the live scanner modal can display them as they appear.
+
+### `roku_deploy.py` — Channel build + sideload
+
+Zips the `roku_receiver/` folder into an in-memory archive and POSTs it to `http://<roku-ip>/plugin_install` using HTTP Digest authentication (the Roku developer interface). After a successful install, `launch()` sends an ECP `POST /launch/<channel-id>` to start the channel, then immediately pushes the proxy URL via `POST /input` so the channel begins playback without the user touching the remote.
+
+### `logger.py` — Rotating log
+
+Attaches a `RotatingFileHandler` to the `pccaster` logger at `INFO` level. The log file is `pc_caster.log` next to the source, capped at 256 KB with 2 backup rollovers. Also installs a `sys.excepthook` that writes uncaught exceptions to the log — critical for diagnosing crashes in the windowless launcher.
+
+<Tip>
+  To add support for a new device type, implement a cast function in `pc_caster.py` following the pattern of `_cast_roku()` or `_cast_firetv()`. Register the device type in `_scan_worker()` and add a branch in `_cast_worker()` to dispatch to it.
+</Tip>

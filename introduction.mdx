@@ -1,0 +1,69 @@
+---
+title: "PC Caster: Cast Live HLS Streams from Windows to Roku"
+sidebarTitle: "Introduction"
+description: "PC Caster is a Windows desktop app that finds .m3u8 streams behind web pages, proxies them with Chrome TLS spoofing, and casts them to your Roku TV."
+---
+
+PC Caster is a small Windows desktop application built with Python and Tkinter that casts video — especially **live HLS streams** (`.m3u8`) — from your PC to a **Roku TV** on the same network. It replaces the need for a phone-based casting app by handling stream discovery, header/TLS unlocking, and TV playback entirely from your Windows machine.
+
+## The Problem PC Caster Solves
+
+Most live stream pages protect their `.m3u8` URLs in two ways: they require a matching **`Referer` header** (the originating page URL), and they reject any HTTP client whose **TLS fingerprint** doesn't match a real browser. This means simply copying the `.m3u8` link and pasting it into VLC or a Roku Media Player always fails with a `403 Forbidden` — the stream CDN sees a non-browser client and blocks it.
+
+PC Caster solves this by intercepting the stream URL and its `Referer` *while a real Chrome browser loads the page*, then re-serving every playlist and segment request through a local proxy that **impersonates Chrome's TLS/JA3 fingerprint** and injects the correct `Referer` and `Origin` headers. The Roku receives a plain HTTP URL from your PC and plays it without needing any special headers at all.
+
+## How the Three-Part Pipeline Works
+
+```text
+  Web page ──(1) Find .m3u8──▶  PC Caster captures stream URL + Referer
+                                          │
+                                          ▼
+  Roku TV ◀─(4) plays─ "PC Caster" channel ◀─(3) launch with proxy URL
+                                          ▲
+                                          │ (2) re-fetch with Chrome TLS + Referer
+                                    Local HLS proxy  ──────▶  Stream CDN
+                                    (http://<PC-IP>:8011)
+```
+
+1. **Stream Finder** — A real Playwright-driven Chromium browser opens the page you specify. As soon as you click a server link, PC Caster sniffs all network traffic and captures the `.m3u8` URL and its `Referer`.
+2. **HLS Proxy** — PC Caster runs a local HTTP server on port **8011**. Every request is re-fetched from the CDN using `curl_cffi` (which impersonates Chrome's TLS fingerprint) with the captured `Referer`/`Origin` injected. The playlist is rewritten so all segment URLs also flow through the proxy.
+3. **Roku Channel** — PC Caster launches its own sideloaded **"PC Caster"** Roku channel via the Roku ECP API and hands it the proxy URL (e.g. `http://192.168.1.50:8011/p.m3u8?...`). The Roku plays over plain HTTP and never has to send any special headers.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Stream Scanner" icon="magnifying-glass">
+    Opens a real Chromium browser, sniffs all network requests, and captures the `.m3u8` URL plus the `Referer` header the player used — automatically.
+  </Card>
+  <Card title="HLS Proxy" icon="shield-check">
+    Re-fetches every playlist and segment with a real Chrome TLS/JA3 fingerprint and injects the correct `Referer`/`Origin` headers, unlocking streams that would otherwise return 403.
+  </Card>
+  <Card title="Custom Roku Channel" icon="tv">
+    Sideloads a dedicated **"PC Caster"** BrightScript/SceneGraph channel to your Roku. The app installs it once and drives it via ECP on every subsequent cast.
+  </Card>
+  <Card title="Auto Device Discovery" icon="wifi">
+    Automatically finds Roku (and Fire TV) devices on your LAN using SSDP. Displays each device's friendly name, type, and IP. Manual IP entry is available as a fallback.
+  </Card>
+  <Card title="PC Test Mode" icon="display">
+    Play the proxied stream in VLC on your PC before sending it to the TV. Confirms the proxy and stream are working independently of TV connectivity.
+  </Card>
+  <Card title="Windows Firewall Automation" icon="lock-open">
+    Automatically adds a Windows Firewall inbound rule named **"PC Caster HLS Proxy"** on TCP port 8011 so the Roku can reach your PC — triggered once with a UAC prompt.
+  </Card>
+</CardGroup>
+
+## Requirements
+
+| Requirement | Notes |
+|---|---|
+| **Windows 10/11** | Uses Windows-specific features: taskbar icon, firewall automation, `pythonw.exe`. |
+| **Python 3.9+** | Install from [python.org](https://www.python.org/downloads/). **Tick "Add Python to PATH"** during setup. |
+| **Python packages** | `requests`, `playwright`, `curl_cffi`, `Pillow` — installed automatically by `run.bat`. |
+| **Playwright Chromium** | One-time browser engine download for the stream finder. Installed automatically by `run.bat`. |
+| **Roku in Developer Mode** | Required for the custom "PC Caster" channel. One-time setup on the TV. |
+| **Same network** | Your PC and Roku must be on the same LAN or Wi-Fi. |
+| **VLC** *(optional)* | Only needed for the "Test on PC" button. [videolan.org](https://www.videolan.org/) |
+
+<Note>
+  PC Caster is **Windows-only**. It relies on Windows Firewall (`New-NetFirewallRule`), `pythonw.exe` for windowless launching, and the Windows taskbar API (`SetCurrentProcessExplicitAppUserModelID`) for a branded taskbar icon. It will not run on macOS or Linux.
+</Note>

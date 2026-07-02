@@ -1,0 +1,83 @@
+---
+title: "Find .m3u8 Streams from Any Web Page"
+sidebarTitle: "Find Streams"
+description: "Use the PC Caster stream scanner to capture .m3u8 HLS URLs and their Referer headers from live stream pages using a headless Chromium browser."
+---
+
+PC Caster's stream scanner works exactly like the "video detector" apps on phones — it opens a real, visible Chromium browser, loads the streaming page you give it, and watches every outgoing network request for `.m3u8` URLs. The moment a player inside that page fires off an HLS request, the scanner captures both the stream URL and the `Referer` header the player sent, and lists them in the scanner dialog for you to choose from.
+
+## Why you need the scanner
+
+Most live-stream sites don't put the stream URL anywhere in the page source. The URL is built dynamically in JavaScript and only appears the instant the player starts requesting it. That means you can't copy the page address and paste it directly into PC Caster — you need to observe the actual network traffic. The scanner does exactly that, invisibly, in the background while you interact with the page normally.
+
+## How to use it
+
+<Steps>
+  <Step title="Paste the streaming page URL">
+    Copy the address of the web page that contains the video player — not the stream URL itself. Paste it into the **URL** box in PC Caster.
+  </Step>
+  <Step title="Click Find .m3u8">
+    Click **🔍 Find .m3u8**. The scanner dialog opens and a Chromium browser window launches on your screen.
+  </Step>
+  <Step title="Click the server or quality you want">
+    Inside the browser that just opened, navigate and click the server or quality option you want to watch — for example "TSN 4", "ITV1", or "FOX". These are the links the site uses to switch CDN sources.
+  </Step>
+  <Step title="Press play if the player requires it">
+    Some players start automatically when you pick a source; others show a play button. Click play if you see one. The stream URL only exists on the network once the player actually starts requesting video data.
+  </Step>
+  <Step title="Streams appear in the scanner dialog">
+    As soon as the player begins loading the stream, the URL appears as a row in the scanner dialog. New streams are added in real time as they're detected.
+  </Step>
+  <Step title="Select index.m3u8 and click Use selected">
+    Choose the **index.m3u8 (adaptive)** entry from the list, then click **Use selected**. The stream URL is placed into the URL box, ready to cast or test.
+  </Step>
+</Steps>
+
+## Understanding the scanner dialog
+
+The scanner dialog displays a table with three columns:
+
+| Column | What it shows |
+|---|---|
+| **Stream** | The filename portion of the `.m3u8` URL, e.g. `index.m3u8` or `chunklist_b3000000.m3u8` |
+| **Host** | The CDN domain serving the stream, e.g. `stream.cdn-provider.com` |
+| **Needs Referer?** | `yes` if the stream was requested with a `Referer` header; `—` if it was not |
+
+### Prefer index.m3u8 (adaptive bitrate)
+
+When multiple streams appear, prefer the one named `index.m3u8`. This is the adaptive bitrate master playlist — it lets the Roku pick the best quality automatically based on your network speed. Named variants like `chunklist_b3000000.m3u8` are fixed-quality renditions and skip adaptive switching.
+
+### What the Needs Referer? column means
+
+If a row shows `yes`, the player sent a `Referer` header when it requested the stream. CDN servers use this as a lightweight check — requests without the correct `Referer` get a `403 Forbidden`. A Roku cannot send custom HTTP headers, so without the proxy the stream would fail. PC Caster's built-in proxy captures that `Referer` during scanning and injects it automatically on every request it makes to the CDN, so the Roku never has to send it.
+
+## Two strategies under the hood
+
+PC Caster's `stream_finder.py` uses two detection strategies, tried in order:
+
+**Strategy 1 — Quick HTML scrape** (`requests` + regex): PC Caster fetches the raw page HTML and searches it for any URL matching `.m3u8`. This is instant and free, but it only works if the stream URL is literally written into the page source. Most modern streaming sites build the URL dynamically in JavaScript, so this step typically finds nothing and falls through to strategy 2.
+
+**Strategy 2 — Headless browser sniff** (`find_streams_interactive`, Playwright): A real Chromium browser is launched in visible mode. PC Caster attaches a listener to every network request the browser and all its iframes make. The moment any request URL contains `.m3u8`, the item is captured along with its full request headers (including `Referer`). This mirrors exactly how mobile video-detector apps work and catches streams that are built entirely in JavaScript.
+
+## One-time Playwright setup
+
+Playwright and its Chromium engine are required for the browser sniff. If you see the message **"One-time setup needed"** when you click Find .m3u8, open a terminal in the PC Caster folder and run:
+
+```bash
+pip install playwright
+python -m playwright install chromium
+```
+
+After that, click **🔍 Find .m3u8** again — no further setup is needed.
+
+<Warning>
+  Do not close the browser window yourself. If you close it manually, the scanner may not shut down cleanly. Instead, click **Stop** or **Use selected** inside the scanner dialog to end the session.
+</Warning>
+
+<Tip>
+  If the scanner finds nothing, make sure you clicked a server link in the browser and pressed play. The stream URL only appears on the network when the player actively starts requesting it — simply having the page open is not enough.
+</Tip>
+
+<Note>
+  If you already have the raw `.m3u8` URL, paste it directly into the URL box — you don't need the scanner. Be aware that a URL pasted this way won't have a `Referer` attached, which may cause a `403` if the CDN requires one. Use **🔍 Find .m3u8** whenever possible to capture the Referer automatically.
+</Note>

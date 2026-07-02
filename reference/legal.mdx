@@ -1,0 +1,75 @@
+---
+title: "Legal Notice and Responsible Use Guidelines"
+sidebarTitle: "Legal"
+description: "PC Caster is a general-purpose casting tool released under the MIT License. You are responsible for only using it with streams you are legally entitled to access."
+---
+
+PC Caster is a general-purpose network relay tool that re-fetches HTTP resources and forwards them to devices on a local network. Its authors make no determination about the legality of any particular use — that responsibility falls entirely on the user. The tool was built for personal, lawful use of streams the user is already able to access in a browser.
+
+## License
+
+PC Caster is released under the **MIT License**.
+
+```text LICENSE
+MIT License
+
+Copyright (c) 2026 iluisgm
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+**Key points:**
+- Free to use, modify, and distribute with attribution.
+- Provided as-is with no warranty of any kind.
+- The authors are not liable for damages arising from use or misuse.
+
+## Responsible use
+
+PC Caster relays streams that your PC can already access in a browser — it does not unlock content that is otherwise inaccessible to you. Using it responsibly means:
+
+- **Only access streams you are legally entitled to view.** This includes streams you have a subscription to, streams from services you are licensed to use, or content in the public domain.
+- **Comply with website terms of service.** Many streaming sites prohibit automated access or re-broadcasting, even for personal use.
+- **Comply with copyright law in your jurisdiction.** Laws around recording, redistribution, and retransmission vary by country.
+- **Do not redistribute streams.** PC Caster is a point-to-point tool between your PC and your own TV on your own network.
+
+## What PC Caster does NOT do
+
+<AccordionGroup>
+
+  <Accordion title="It does not store or record streams">
+    PC Caster's local proxy passes stream data through in real time — segments are fetched from the CDN and forwarded to the Roku as they are requested. Nothing is written to disk. The proxy has no buffering or recording capability.
+  </Accordion>
+
+  <Accordion title="It does not bypass DRM encryption">
+    PC Caster only handles streams that are already playable in a plain browser without a DRM license. It replicates the HTTP headers (`Referer`, `Origin`) and TLS fingerprint that the browser would send — it does not decrypt Widevine, PlayReady, FairPlay, or any other DRM-encrypted content. If a stream requires a DRM license to decode, PC Caster cannot play it.
+  </Accordion>
+
+  <Accordion title="It does not access geo-locked content">
+    The proxy re-fetches streams from the same IP address as your PC. It does not use a VPN, proxy server, or any technique to circumvent geographic restrictions. If a stream is blocked in your country, PC Caster will not unblock it.
+  </Accordion>
+
+</AccordionGroup>
+
+<Warning>
+  Using PC Caster to access content you are not authorized to view may violate copyright law and website terms of service. The authors are not responsible for misuse.
+</Warning>
+
+## Version
+
+PC Caster v1.1 · Built June 2026

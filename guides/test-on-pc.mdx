@@ -1,0 +1,65 @@
+---
+title: "Test the Proxied Stream on Your PC Before Casting"
+sidebarTitle: "Test on PC"
+description: "Use the Test on PC button to play the proxied .m3u8 stream in VLC on your Windows PC and confirm it works before sending it to your Roku TV."
+---
+
+Before sending a stream to your Roku, it's worth confirming the proxy is working correctly and the stream itself is healthy. The **🖥 Test on PC** button starts the local HLS proxy, generates the proxied URL, and opens it in VLC on your Windows PC. If the stream plays in VLC, you know the proxy is functioning and the CDN token is still valid. If it plays on your PC but not on the TV afterward, the issue is almost certainly Windows Firewall blocking the Roku from reaching your PC — not the stream or proxy.
+
+## How to use Test on PC
+
+<Steps>
+  <Step title="Capture the stream URL with the scanner">
+    Have a `.m3u8` URL in the URL box. Use **🔍 Find .m3u8** to capture it along with its `Referer` header — that header is what allows the proxy to authenticate with the CDN on your behalf.
+  </Step>
+  <Step title="Select your Roku in the device list">
+    Click your Roku's row in the device list so it is highlighted. This tells the proxy which network interface to bind to, ensuring the proxy URL it generates is reachable from both your PC and the TV.
+  </Step>
+  <Step title="Click Test on PC">
+    Click **🖥 Test on PC**. The proxy starts (if it wasn't already running) and VLC opens with the proxied stream.
+  </Step>
+</Steps>
+
+## What happens behind the scenes
+
+When you click Test on PC with an `.m3u8` URL in the URL box:
+
+1. **Proxy starts** — `HlsProxy.start(target_ip)` is called using the selected Roku's IP address. This binds the proxy to the correct LAN interface.
+
+2. **Proxied URL is generated** — The proxy constructs a local URL that routes all requests through itself, injecting the captured `Referer` and a real Chrome TLS fingerprint on every outbound request to the CDN:
+   ```
+   http://<PC-LAN-IP>:8011/p.m3u8?u=<b64 stream url>&r=<b64 referer>
+   ```
+
+3. **VLC is launched** — PC Caster checks for VLC at the following paths:
+   ```
+   C:\Program Files\VideoLAN\VLC\vlc.exe
+   C:\Program Files (x86)\VideoLAN\VLC\vlc.exe
+   ```
+   If VLC is found, it's launched directly with the proxied URL and the stream begins playing.
+
+4. **No VLC found** — If VLC isn't installed in the default location, the proxied URL is copied to your clipboard and a dialog explains how to use it manually.
+
+## Installing VLC
+
+VLC is optional but required for the **Test on PC** button to launch playback automatically. Download and install it from [videolan.org](https://www.videolan.org/). The default install location (`C:\Program Files\VideoLAN\VLC\`) is recognized automatically — no additional configuration needed.
+
+## Diagnosing results
+
+| Result | What it means |
+|---|---|
+| **Plays in VLC** | The stream URL is valid, the proxy is working, and the Referer is correct. If the TV fails afterward, check your Windows Firewall settings. |
+| **VLC opens but shows an error or black screen** | The stream token may have expired. Click **🔍 Find .m3u8** to capture a fresh URL and try again. |
+| **Nothing plays and the proxy shows errors** | Playwright may not be installed, or the captured URL has no associated Referer. Re-capture the stream with the scanner. |
+
+<Warning>
+  Never test with the raw `.m3u8` URL directly in VLC — it will fail with a `403 Forbidden`. CDN servers block requests that don't come with the correct `Referer` header and a browser-like TLS fingerprint. Only the proxied URL (the one PC Caster generates) works.
+</Warning>
+
+<Note>
+  If VLC isn't found automatically, the proxied URL is copied to your clipboard. Open VLC → **Media** → **Open Network Stream** → paste the URL → **Play**.
+</Note>
+
+<Tip>
+  The proxy binds to the LAN IP on the interface facing your selected device. Selecting the correct Roku before clicking Test on PC ensures the proxy URL is reachable from the TV too — so the same URL you test on your PC is the one the Roku will use when you cast.
+</Tip>

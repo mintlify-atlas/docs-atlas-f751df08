@@ -1,0 +1,74 @@
+---
+title: "PC Caster Configuration File and Settings"
+sidebarTitle: "Configuration"
+description: "PC Caster stores settings in ~/.pc_caster.json. Learn about every configuration key: saved devices, dev password, receiver mode, and proxy port."
+---
+
+PC Caster saves all persistent settings to `~/.pc_caster.json` (your Windows home folder). Settings are written automatically as you use the app — after selecting a device, entering a dev password, or changing the receiver mode — so you rarely need to edit this file directly.
+
+## Config file location
+
+```
+C:\Users\<YourName>\.pc_caster.json
+```
+
+The tilde (`~`) expands to the value of `%USERPROFILE%` on Windows (e.g. `C:\Users\Luis`). The file is created on first use and updated in-place each time a setting changes.
+
+## Example config
+
+```json ~/.pc_caster.json
+{
+  "last_device": "Living Room (192.168.1.100)",
+  "roku_dev_password": "yourpassword",
+  "last_roku_ip": "192.168.1.100",
+  "receiver_mode": "mychannel",
+  "manual_devices": {
+    "Living Room (192.168.1.100)": {
+      "ip": "192.168.1.100",
+      "type": "Roku"
+    }
+  }
+}
+```
+
+## Config keys
+
+| Key | Type | Description |
+|---|---|---|
+| `last_device` | string | Name of the last-used device; auto-selected on next launch |
+| `roku_dev_password` | string | Dev password for the Roku sideloader; saved after first successful install |
+| `last_roku_ip` | string | Last Roku IP used in the TV App dialog |
+| `receiver_mode` | string | Cast mode: `mychannel` (default), `mediaplayer`, or `castify` |
+| `manual_devices` | object | Map of manually-added devices (name → `{ip, type}`) |
+
+### `receiver_mode` values
+
+| Value | Description |
+|---|---|
+| `mychannel` | **(Recommended)** Uses the custom sideloaded PC Caster channel; fully controlled by the app via Roku ECP |
+| `mediaplayer` | Uses the built-in Roku Media Player (channel 2213/2285); cannot play header-locked HLS streams |
+| `castify` | Experimental — targets the Castify channel (651775); may not respond to ECP input commands |
+
+## Migration from old config
+
+PC Caster automatically migrates settings from the old configuration filename `~/.castify_pc.json` if that file is present and `~/.pc_caster.json` does not yet exist. The saved dev password, devices, and last-used device are all carried over — no manual action is needed.
+
+## Proxy port
+
+The local HLS proxy binds to **TCP port 8011** on all interfaces (`0.0.0.0`). This port is hardcoded and is not currently configurable. The Windows Firewall rule named **"PC Caster HLS Proxy"** must allow inbound TCP 8011 for the Roku to reach the proxy. PC Caster adds this rule automatically (one UAC prompt) the first time you cast an HLS stream.
+
+## Log file
+
+| Property | Value |
+|---|---|
+| **Location** | `pc_caster.log` in the same folder as `pc_caster.py` |
+| **Max size** | ~256 KB per file |
+| **Rollovers** | 2 backup files (`pc_caster.log.1`, `pc_caster.log.2`) |
+| **Managed by** | Python's `RotatingFileHandler` |
+| **Open via** | **📄 Log** button in the app, or any text editor |
+
+The log records every cast attempt, proxy request, upstream HTTP error, and uncaught exception. It is the primary diagnostic tool when the app is running windowless via `PC Caster.vbs`.
+
+<Note>
+  Do not edit the config file while PC Caster is running — it may be overwritten. Close the app first, make your edits, then relaunch.
+</Note>

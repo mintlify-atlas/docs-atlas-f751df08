@@ -1,0 +1,110 @@
+---
+title: "Install PC Caster on Windows"
+sidebarTitle: "Installation"
+description: "Install Python 3.9+, download PC Caster, and run run.bat to automatically install all dependencies and launch the app."
+---
+
+Installing PC Caster on Windows takes only a few minutes. The included `run.bat` script handles every dependency — Python packages, the Playwright Chromium engine, and brand icons — automatically on first run. You only need to install Python itself beforehand.
+
+## Prerequisites
+
+- **Windows 10 or 11** (PC Caster uses Windows-specific APIs and will not run on macOS or Linux)
+- **Python 3.9 or later** — download the installer from [python.org/downloads](https://www.python.org/downloads/)
+
+<Note>
+  During Python installation, **tick "Add Python to PATH"** on the first screen. Without this, `run.bat` will detect Python as missing and exit before installing any dependencies.
+</Note>
+
+## Installation Steps
+
+<Steps>
+  <Step title="Install Python 3.9+">
+    Download the latest Python 3 installer from [python.org/downloads](https://www.python.org/downloads/) and run it.
+
+    On the first installer screen, check **"Add Python to PATH"** before clicking *Install Now*. This lets `run.bat` find `python` and `pip` automatically from any folder.
+  </Step>
+  <Step title="Place the PCCaster folder">
+    Download or copy the `PCCaster` folder to any location on your PC — your `Downloads` folder, `Documents`, or the Desktop all work fine. The app reads its files relative to its own location, so it is fully portable and can be moved later.
+  </Step>
+  <Step title="Double-click run.bat">
+    Open the `PCCaster` folder and double-click **`run.bat`**. A console window appears and the script runs the following steps automatically:
+
+    1. **Checks Python** — exits with a helpful message if Python is not in PATH.
+    2. **Installs Python packages** — runs `pip install -r requirements.txt --quiet`.
+    3. **Installs Playwright Chromium** — runs `python -m playwright install chromium` (one-time browser engine download; only downloads if not already present).
+    4. **Generates brand icons** — runs `python make_icons.py` if `assets\app_icon.ico` does not yet exist.
+    5. **Launches the app windowless** — calls `wscript.exe "PC Caster.vbs"`, which starts PC Caster without a console window, then the `run.bat` console closes.
+
+    On subsequent runs, steps 2 and 3 are fast (pip and Playwright both skip up-to-date packages) and the icon step is skipped entirely.
+  </Step>
+</Steps>
+
+## Python Dependencies
+
+`run.bat` installs the following packages from `requirements.txt`:
+
+```text requirements.txt
+requests>=2.28.0
+playwright>=1.40.0
+curl_cffi>=0.7.0
+Pillow>=10.0.0
+```
+
+| Package | Purpose |
+|---|---|
+| `requests` | Roku ECP API calls (device info, app queries, channel launch). |
+| `playwright` | Drives a real Chromium browser to sniff `.m3u8` URLs from streaming pages. |
+| `curl_cffi` | Re-fetches stream content with a real Chrome TLS/JA3 fingerprint, bypassing TLS-based blocking. |
+| `Pillow` | Generates the app and Roku channel icons from the source design at first run. |
+
+## The Full run.bat Script
+
+```batch run.bat
+@echo off
+title PC Caster
+
+REM ── Check Python is available ────────────────────────────────────────────────
+python --version >nul 2>&1
+IF ERRORLEVEL 1 (
+    echo.
+    echo  Python not found.
+    echo  Please install Python from https://www.python.org/downloads/
+    echo  Make sure to check "Add Python to PATH" during installation.
+    echo.
+    pause
+    exit /b 1
+)
+
+REM ── Install dependencies ─────────────────────────────────────────────────────
+echo Installing/checking dependencies...
+pip install -r requirements.txt --quiet
+
+REM ── Install the headless browser used by the .m3u8 finder (one-time) ─────────
+echo Checking headless browser for stream scanning...
+python -m playwright install chromium
+
+REM ── Generate brand icons if missing ──────────────────────────────────────────
+IF NOT EXIST "assets\app_icon.ico" (
+    echo Generating brand icons...
+    python make_icons.py
+)
+
+REM ── Launch the app windowless (no lingering console) ────────────────────────
+echo Starting PC Caster...
+start "" wscript.exe "PC Caster.vbs"
+REM The console closes now; the app keeps running on its own.
+```
+
+## Launcher Options
+
+Once the initial setup is done, you have three ways to open PC Caster:
+
+| Launcher | When to use |
+|---|---|
+| **`run.bat`** | Use this after updating PC Caster or when you want to refresh dependencies. Shows a console during the pip/Playwright check, then closes it and launches the app windowless. |
+| **`PC Caster.vbs`** | The everyday launcher — starts PC Caster directly with no console window at all. Fully portable; works correctly even if you move the folder. |
+| **`Create Desktop Shortcut.bat`** | Run once to create a branded **PC Caster** shortcut on your Desktop (using the generated `.ico` icon). Re-run this script if you ever move the `PCCaster` folder to a new location. |
+
+<Tip>
+  Run `run.bat` again any time you update the `PCCaster` folder to a newer version — it will upgrade any changed packages and re-download Playwright if needed, then relaunch the app automatically.
+</Tip>

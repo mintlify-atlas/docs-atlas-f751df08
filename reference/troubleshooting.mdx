@@ -1,0 +1,103 @@
+---
+title: "Troubleshooting PC Caster: Common Issues and Fixes"
+sidebarTitle: "Troubleshooting"
+description: "Fix the most common PC Caster problems: TV blinks and stops, stream expired, raw URL fails in VLC, scanner finds nothing, and channel install errors."
+---
+
+Most PC Caster problems fall into three categories: Windows Firewall blocking the Roku from reaching the proxy on port 8011, an expired CDN stream token (the source returns HTTP 403), or a missing Playwright browser engine that the stream finder needs on first run. The sections below walk through every known symptom and its fix.
+
+<AccordionGroup>
+
+  <Accordion title="TV blinks then nothing plays">
+    **Cause:** Windows Firewall is blocking inbound TCP connections on port 8011, so the Roku can't reach the local HLS proxy running on your PC.
+
+    **Fix:** When PC Caster starts casting it triggers a UAC prompt to add the firewall rule automatically — click **Yes** to allow it. If you dismissed that prompt or the rule was removed, run this command in an elevated PowerShell window:
+
+    ```powershell
+    New-NetFirewallRule -DisplayName "PC Caster HLS Proxy" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8011 -Profile Private
+    ```
+
+    After running the command, click **▶ Cast to TV** again. The rule is named **PC Caster HLS Proxy** and only opens port 8011 on Private networks.
+  </Accordion>
+
+  <Accordion title="Played fine, then stopped mid-stream">
+    **Cause:** The stream's CDN token has expired. The proxy tries to re-fetch a segment or playlist from the CDN and receives **HTTP 403 Forbidden**. This is normal for live streams that rotate tokens every few minutes to an hour.
+
+    **Log evidence:** Open the log file and look for a line containing:
+
+    ```
+    proxy upstream HTTP 403
+    ```
+
+    **Fix:** Click **🔍 Find .m3u8** again on the same page to capture a fresh stream link with a valid token, then click **▶ Cast to TV**.
+  </Accordion>
+
+  <Accordion title="Raw .m3u8 URL won't open in VLC">
+    **Cause:** This is expected behavior, not a bug. Raw stream URLs from most live streaming sites require a specific HTTP `Referer` header and a browser-like TLS fingerprint (JA3). VLC — and the Roku — cannot send those, so the CDN returns 403 Forbidden.
+
+    **Fix:** Always use **🖥 Test on PC** to preview via the proxied URL, or **▶ Cast to TV** to send the proxied URL to the Roku. Never paste the raw `.m3u8` link directly into VLC or another player — only the proxied URL (`http://<PC-IP>:8011/p.m3u8?...`) works outside of a real browser.
+  </Accordion>
+
+  <Accordion title='"Find .m3u8" scanner finds nothing'>
+    **Cause:** The scanner watches network traffic in a real browser window that PC Caster opens. Most streams don't start loading until you interact with the page — click a server button (e.g. "Server 1", "HD", "FOX") and then press the play button inside the embedded player.
+
+    **Fix:** In the browser window that opens, click a server link, then press play. The stream entry appears in the scanner list within a second or two.
+
+    **Sub-cause — first run:** The scanner requires the Playwright headless browser engine, which must be installed separately once. If you see a "One-time setup needed" dialog, open a terminal in the PC Caster folder and run:
+
+    ```bash
+    pip install playwright
+    python -m playwright install chromium
+    ```
+
+    Then click **🔍 Find .m3u8** again.
+  </Accordion>
+
+  <Accordion title="Scan doesn't list the Roku">
+    **Cause:** The automatic scanner uses SSDP multicast (`239.255.255.250:1900`) to discover Roku devices. This can fail if multicast is blocked on your router, if the Roku is on a different network subnet, or if your Wi-Fi uses client isolation.
+
+    **Fix:** Click **＋ Add IP** and type the Roku's IP address manually. To find the IP on the Roku: go to **Settings → Network → About** — it is listed there as the IP address.
+  </Accordion>
+
+  <Accordion title="Channel won't install">
+    **Cause:** The PC Caster Roku channel is sideloaded via Roku's Developer Mode HTTP interface. Installation fails if Developer Mode was not fully completed or if the wrong dev password was entered.
+
+    **Fix:**
+    1. On the Roku remote, re-enter Developer Mode by pressing: **Home ×3, Up ×2, Right, Left, Right, Left, Right**.
+    2. Confirm the *Developer Settings* screen appears, that the installer is **Enabled**, and note the password you set.
+    3. In PC Caster, open **📺 TV App**, re-enter the Roku IP and the exact dev password, and click **Install / Update channel**.
+  </Accordion>
+
+  <Accordion title="App won't start (windowless)">
+    **Cause:** PC Caster launches via `PC Caster.vbs` using `pythonw.exe`, which suppresses the console window. If a Python import or startup error occurs, the app silently fails to open with no visible feedback.
+
+    **Fix:** Double-click `run.bat` instead. It shows a full console window so any error message (missing dependency, wrong Python version, etc.) is visible. Alternatively, open `pc_caster.log` in any text editor to read the last error recorded before the crash.
+  </Accordion>
+
+  <Accordion title='"Roku Media Player just shows a file browser"'>
+    **Cause:** The **Roku Media Player** receiver mode (`mediaplayer`) opens the built-in Roku file browser UI, which cannot play header-locked HLS streams. This mode exists only for testing and is not suitable for streams captured with PC Caster.
+
+    **Fix:** Open **📺 TV App** and switch the receiver mode to **"My TV App (recommended)"**. Click **Save choice**. Your next cast will use the custom PC Caster channel instead.
+  </Accordion>
+
+</AccordionGroup>
+
+## Reading the log file
+
+The log file is the fastest way to understand what went wrong, especially when running windowless. Every cast attempt, proxy upstream request, HTTP error code, and uncaught exception is recorded with a timestamp.
+
+**To open the log:**
+- Click the **📄 Log** button in the PC Caster toolbar — it opens in your default text editor (Notepad).
+- Or open `pc_caster.log` directly from the folder where `pc_caster.py` lives.
+
+The log uses Python's `RotatingFileHandler` and is capped at **~256 KB** with **2 backup rollovers** (`pc_caster.log.1`, `pc_caster.log.2`). Each line follows the format:
+
+```
+2026-06-01 14:32:07  INFO     CAST start: device=Living Room ...
+2026-06-01 14:32:09  INFO     Proxy started at http://192.168.1.50:8011
+2026-06-01 14:32:45  WARNING  proxy upstream HTTP 403 for https://cdn.example.com/...
+```
+
+<Tip>
+  The log is the fastest way to diagnose problems when running windowless. Every cast attempt, proxy request, and error is recorded.
+</Tip>

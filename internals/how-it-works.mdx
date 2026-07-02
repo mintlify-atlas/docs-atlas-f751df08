@@ -1,0 +1,106 @@
+---
+title: "How PC Caster Works: Stream Pipeline Architecture"
+sidebarTitle: "How It Works"
+description: "A technical overview of the PC Caster pipeline: stream detection via Playwright, the local HLS proxy with Chrome TLS spoofing, and the Roku ECP channel control flow."
+---
+
+PC Caster solves a specific problem — HLS stream CDNs return HTTP 403 to anything that isn't a real browser. Two conditions trigger the block: a missing or wrong `Referer` header, and a non-Chrome TLS fingerprint. Pasting the raw `.m3u8` URL into VLC or a Roku always fails for exactly these reasons. The solution is a three-stage pipeline that runs entirely on your Windows PC, intercepting the stream URL before it leaves the browser, re-serving it with the right credentials, and pushing it to the Roku over plain HTTP the TV can actually read.
+
+## Pipeline overview
+
+```
+  Web page ──(1) Find .m3u8──▶  stream_finder.py captures stream URL + Referer
+                                        │
+                                        ▼
+  Roku TV ◀─(4) plays─ PC Caster channel ◀─(3) ECP launch with proxy URL
+                                        ▲
+                                        │ (2) re-fetch with Chrome TLS + Referer
+                                  hls_proxy.py  ──────▶  Stream CDN
+                                  (http://<PC-LAN-IP>:8011)
+```
+
+## Stage 1 — Stream detection (`stream_finder.py`)
+
+`stream_finder.py` opens a **visible** Chromium browser via Playwright using `find_streams_interactive`. As soon as the browser navigates to the streaming page, it attaches a request listener with `page.on('request', _record)` to the main page and to every new tab the site opens.
+
+Every intercepted request is checked with `_is_m3u8(url)`, which looks for `.m3u8` in the URL **path portion only** — before the `?` — so tokenised query strings don't cause false negatives or false positives. When a match is found, the listener records the `Referer` and `Origin` headers the browser sent with that request and emits a result dict:
+
+```python stream_finder.py
+{
+    "url":     "https://cdn.example.com/live/index.m3u8?token=abc",
+    "referer": "https://www.streamsite.com/watch/12345",
+    "origin":  "https://www.streamsite.com",
+    "label":   "index.m3u8",
+}
+```
+
+The user clicks the server link they want inside the browser. The moment the video player fires its first `.m3u8` request, PC Caster captures it and shows it in the scanner modal. Ad and popup tabs are automatically closed in the background loop so they don't bury the real player window.
+
+## Stage 2 — Local HLS proxy (`hls_proxy.py`)
+
+The proxy is a `ThreadingHTTPServer` bound to `0.0.0.0:8011`. It starts lazily the first time a cast is initiated. When a device requests a URL like:
+
+```
+http://192.168.1.50:8011/p.m3u8?u=<base64 upstream URL>&r=<base64 Referer>
+```
+
+the handler decodes both query params, then re-fetches the real CDN resource using:
+
+```python hls_proxy.py
+r = creq.get(target, headers=headers, impersonate=IMPERSONATE, timeout=25)
+```
+
+`creq` is `curl_cffi.requests` — a Python bindings layer on top of libcurl compiled with BoringSSL. The `impersonate='chrome'` argument makes libcurl reproduce Chrome's exact TLS ClientHello and JA3 fingerprint. The proxy also injects the captured `Referer` and derives `Origin` from it before forwarding.
+
+If the response is an M3U8 playlist (detected by `#EXTM3U` magic bytes, `mpegurl` in the Content-Type, or a `.m3u8` path), every child URI in the playlist — variant streams, segment paths, `EXT-X-KEY` URIs — is rewritten to point back through the proxy. This ensures every downstream request the Roku makes also carries the browser credentials.
+
+## Stage 3 — Roku channel control (`roku_deploy.py` + BrightScript)
+
+PC Caster ships a minimal BrightScript SceneGraph channel called **PC Caster** that lives in the `roku_receiver/` directory. On first cast, `roku_deploy.sideload()` zips the channel and POSTs it to the Roku's developer web server:
+
+```
+POST http://<roku-ip>/plugin_install
+Authorization: Digest username="rokudev", ...
+```
+
+Once installed, casting sends a Roku ECP launch command:
+
+```
+POST http://<roku-ip>:8060/launch/dev?contentId=<proxy_url>&mediaType=hls
+```
+
+The `contentId` parameter carries the full proxy URL (e.g. `http://192.168.1.50:8011/p.m3u8?u=...&r=...`). While the channel is already running, a new stream can be pushed instantly without relaunching:
+
+```
+POST http://<roku-ip>:8060/input?contentId=<proxy_url>&mediaType=hls
+```
+
+The BrightScript channel receives this via `roInputEvent`, reads `contentId` from the event info, and calls `video.control = "play"` on a new `ContentNode`.
+
+## Why `curl_cffi` is required
+
+Python's built-in `ssl` module (via `urllib3` / `requests`) has a distinctive JA3 fingerprint that CDNs use as a blocklist signal. The TLS ClientHello from a plain Python process is missing the GREASE values, specific cipher suite ordering, and extension types that real Chrome sends — CDNs detect this pattern and return 403 before the HTTP layer is even reached.
+
+`curl_cffi` uses libcurl with BoringSSL to reproduce Chrome's complete TLS handshake, including cipher suites, elliptic curves, and GREASE pseudo-values. This is the only change that causes the CDN to serve the stream instead of blocking it.
+
+## SSDP device discovery
+
+PC Caster finds Roku devices on the LAN automatically, without requiring the user to know the IP address. It sends a UDP M-SEARCH to the multicast address `239.255.255.250:1900` with the Roku-specific search target:
+
+```python pc_caster.py
+SSDP_ADDR = "239.255.255.250"
+SSDP_PORT = 1900
+# Search target sent in the M-SEARCH:  ST: roku:ecp
+```
+
+Each device that replies includes a `Location:` header. The IP is extracted from that header with a regex, then a friendly name is fetched from the Roku's ECP device-info endpoint:
+
+```
+GET http://<roku-ip>:8060/query/device-info
+```
+
+The XML response's `user-device-name` (or `model-name` as a fallback) becomes the display label in the device list.
+
+<Note>
+  The proxy only handles M3U8 and MPEG-TS content. It does not support DASH (MPD) streams.
+</Note>

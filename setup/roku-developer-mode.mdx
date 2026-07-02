@@ -1,0 +1,60 @@
+---
+title: "Enable Roku Developer Mode for Sideloading"
+sidebarTitle: "Roku Dev Mode"
+description: "Enable Developer Mode on your Roku TV with the remote key sequence, set a dev password, and prepare for sideloading the PC Caster channel."
+---
+
+PC Caster works by sideloading a custom BrightScript channel — called **PC Caster** — directly onto your Roku TV. Sideloading bypasses the Roku Channel Store and lets the app install and control the channel with no phone or Roku account required. Roku only permits this when **Developer Mode** is enabled on the device itself. This is a one-time setup that takes about two minutes, and you only need to repeat it if you factory-reset the TV.
+
+## Enable Developer Mode
+
+<Steps>
+  <Step title="Enter the secret key sequence on your Roku remote">
+    From the Roku **Home screen**, press the following buttons in order — do not pause more than a second between presses:
+
+    **Home ×3 → Up ×2 → Right → Left → Right → Left → Right**
+
+    This is Roku's hidden developer key combo. Nothing happens on screen while you press the buttons; the Developer Settings dialog only appears after the final **Right** press.
+  </Step>
+
+  <Step title="Enable the installer">
+    The **Developer Settings** screen appears. Select **Enable installer and restart** and confirm the prompt. The TV will reboot automatically.
+
+    <Note>
+      The Roku will restart after enabling Developer Mode. This is normal — it only takes about 30 seconds.
+    </Note>
+  </Step>
+
+  <Step title="Set a developer password">
+    After the reboot the Developer Settings screen re-opens and asks you to create a **developer password**. This password protects the Roku's built-in dev web server (the same server PC Caster uploads the channel to).
+
+    Choose any password and save it somewhere safe — you will need it in the next setup step.
+
+    <Tip>
+      The developer password you set here is entirely separate from your Roku account password. Write it down — you'll enter it into PC Caster when installing the channel.
+    </Tip>
+  </Step>
+
+  <Step title="Accept the SDK license agreement">
+    Read and accept the **Roku Developer SDK license agreement**. Skipping this step causes channel installs to fail with an error later.
+  </Step>
+
+  <Step title="Developer Mode is active">
+    The TV reboots a second time and returns to the Home screen. Developer Mode is now fully enabled. You will see a small **DEV** label appear in the channel slot when the PC Caster channel is installed.
+  </Step>
+</Steps>
+
+## What to do next
+
+With Developer Mode enabled, you are ready to install the PC Caster channel. Head to [Install the PC Caster Channel](/setup/tv-app-install) for step-by-step instructions on uploading and activating the channel from inside the app.
+
+## Troubleshooting
+
+**The Developer Settings screen never appeared.**
+Make sure you started the key sequence from the **Roku Home screen**, not from inside a channel or menu. Press **Home** once first to ensure you are at the top level, then try the sequence again: Home ×3 → Up ×2 → Right → Left → Right → Left → Right. The sequence is timing-sensitive — press each button with a short, deliberate pause rather than rapid-firing them.
+
+**The screen appeared but closed without doing anything.**
+This can happen if you pressed a wrong button mid-sequence. Go back to the Home screen and repeat the sequence from the beginning.
+
+**The Roku is too old to support Developer Mode.**
+All Roku OS 9.2+ devices support Developer Mode. If your TV is running very old firmware, go to Settings → System → System update and update first.

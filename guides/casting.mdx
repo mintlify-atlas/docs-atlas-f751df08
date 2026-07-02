@@ -1,0 +1,88 @@
+---
+title: "Cast Streams to Your Roku TV with PC Caster"
+sidebarTitle: "Casting"
+description: "Select a Roku device, choose your .m3u8 stream, and hit Cast to TV. The HLS proxy starts automatically and the stream plays through your custom Roku channel."
+---
+
+When you click **▶ Cast to TV**, PC Caster starts the local HLS proxy, checks that Windows Firewall allows the Roku to reach your PC, and uses the Roku External Control Protocol (ECP) API to launch the custom PC Caster channel on your TV — passing it the proxied stream URL so the Roku can play it without needing to send any special headers. The entire chain from click to playback typically completes in a few seconds.
+
+## Prerequisites
+
+Before clicking Cast to TV, make sure you have:
+
+- **A Roku device** visible in the device list (run a scan or add it by IP — see [Device Management](/guides/device-management))
+- **A stream URL** in the URL box, either captured with **🔍 Find .m3u8** or pasted directly
+- **The TV App installed** on your Roku via **📺 TV App** (one-time setup — see the [First-time TV setup](/setup/tv-app-install) guide)
+
+## The casting flow
+
+<Steps>
+  <Step title="Check the device list">
+    Make sure your Roku appears in the device list. If it doesn't, click **↺ Scan** or use **＋ Add IP** to add it manually.
+  </Step>
+  <Step title="Select your Roku">
+    Click the Roku's row in the device list to select it. The selected row highlights blue.
+  </Step>
+  <Step title="Confirm the stream URL">
+    Check that the URL box contains a `.m3u8` URL. If not, use **🔍 Find .m3u8** to capture one from the streaming page.
+  </Step>
+  <Step title="Click Cast to TV">
+    Click **▶ Cast to TV**. The button changes to **⏳ Casting…** while the app contacts the Roku.
+  </Step>
+  <Step title="Watch the status bar">
+    Once the Roku starts pulling video, the status bar in the bottom-right corner shows **⚡ Streaming to TV · N reqs**, updating every second as the Roku fetches segments through the proxy.
+  </Step>
+</Steps>
+
+## What happens behind the scenes
+
+When you click Cast to TV with an HLS stream URL:
+
+1. **Proxy start** — `HlsProxy.start(target_ip)` is called with the Roku's IP. This binds the proxy to the local network interface that can reach the Roku and starts listening on port `8011`. The proxy URL for the stream is generated using `HlsProxy.url_for(real_m3u8, referer)`, producing an address like:
+   ```
+   http://192.168.1.50:8011/p.m3u8?u=<b64 stream url>&r=<b64 referer>
+   ```
+
+2. **Firewall check** — `ensure_firewall_rule(8011)` is called. If a Windows Firewall inbound rule for port `8011` doesn't exist yet, a UAC prompt appears asking for permission to add one. This happens only once.
+
+3. **Channel launch** — `roku_deploy.launch(ip, cast_url, fmt)` calls the Roku ECP endpoint:
+   ```
+   POST http://<roku-ip>:8060/launch/dev?contentId=<proxy-url>&mediaType=hls
+   ```
+   The Roku opens the PC Caster channel and begins streaming from the proxy URL.
+
+4. **Auto-sideload** — If the PC Caster channel is not yet installed on the Roku, `roku_deploy.sideload()` runs automatically to upload it before launching.
+
+## Receiver mode options
+
+The receiver mode controls which Roku channel PC Caster uses to play the stream. Configure it in **📺 TV App**.
+
+| Mode | When to use |
+|---|---|
+| **My TV App** *(default, recommended)* | Uses the custom PC Caster channel. The only mode that reliably plays header-locked streams via the proxy. |
+| **Roku Media Player** | The Roku built-in channel. Cannot send custom headers, so streams that need a `Referer` will fail with a `403`. |
+| **Castify** | Experimental. May not behave reliably with all streams. |
+
+## Status bar states
+
+The proxy indicator in the bottom-right corner of the status bar reflects the current proxy state in real time:
+
+| Indicator | Meaning |
+|---|---|
+| `○ Proxy off` | The proxy has not been started yet. |
+| `● Proxy ready (idle)` | The proxy is running but the Roku hasn't requested anything recently. |
+| `⚡ Streaming to TV · N reqs` | The Roku is actively pulling segments through the proxy. The request count updates every second. |
+
+## Token expiry and mid-stream 403s
+
+CDN stream tokens have a limited lifespan — typically between 30 minutes and a few hours. When a token expires, the CDN returns `403 Forbidden` and playback stops. The proxy log records this as `proxy upstream HTTP 403`.
+
+To resume, simply click **🔍 Find .m3u8** again on the same page, select the fresh stream URL, and click **▶ Cast to TV**. The new URL will have a valid token.
+
+<Warning>
+  Keep PC Caster open while watching. The HLS proxy runs inside the app process — closing the app immediately stops the stream on your TV.
+</Warning>
+
+<Tip>
+  If the TV blinks and stops immediately after casting, Windows Firewall is likely blocking the Roku's connection to the proxy. PC Caster automatically prompts for a firewall rule via UAC — allow it. If you dismissed the prompt, see the [Windows Firewall](/setup/windows-firewall) guide for manual steps.
+</Tip>
