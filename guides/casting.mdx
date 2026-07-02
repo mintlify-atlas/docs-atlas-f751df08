@@ -1,7 +1,7 @@
 ---
-title: "Cast Streams to Your Roku TV with PC Caster"
+title: "Cast an HLS Stream to Your Roku TV Using PC Caster"
 sidebarTitle: "Casting"
-description: "Select a Roku device, choose your .m3u8 stream, and hit Cast to TV. The HLS proxy starts automatically and the stream plays through your custom Roku channel."
+description: "Select a Roku device, choose your .m3u8 stream, and click Cast to TV. The HLS proxy starts automatically and the stream plays through your Roku channel."
 ---
 
 When you click **▶ Cast to TV**, PC Caster starts the local HLS proxy, checks that Windows Firewall allows the Roku to reach your PC, and uses the Roku External Control Protocol (ECP) API to launch the custom PC Caster channel on your TV — passing it the proxied stream URL so the Roku can play it without needing to send any special headers. The entire chain from click to playback typically completes in a few seconds.
@@ -40,7 +40,7 @@ When you click Cast to TV with an HLS stream URL:
 
 1. **Proxy start** — `HlsProxy.start(target_ip)` is called with the Roku's IP. This binds the proxy to the local network interface that can reach the Roku and starts listening on port `8011`. The proxy URL for the stream is generated using `HlsProxy.url_for(real_m3u8, referer)`, producing an address like:
    ```
-   http://192.168.1.50:8011/p.m3u8?u=<b64 stream url>&r=<b64 referer>
+   http://192.168.1.50:8011/p.m3u8?u=<b64url>&r=<b64referer>
    ```
 
 2. **Firewall check** — `ensure_firewall_rule(8011)` is called. If a Windows Firewall inbound rule for port `8011` doesn't exist yet, a UAC prompt appears asking for permission to add one. This happens only once.
@@ -59,9 +59,9 @@ The receiver mode controls which Roku channel PC Caster uses to play the stream.
 
 | Mode | When to use |
 |---|---|
-| **My TV App** *(default, recommended)* | Uses the custom PC Caster channel. The only mode that reliably plays header-locked streams via the proxy. |
-| **Roku Media Player** | The Roku built-in channel. Cannot send custom headers, so streams that need a `Referer` will fail with a `403`. |
-| **Castify** | Experimental. May not behave reliably with all streams. |
+| **My TV App** *(default, recommended)* | Uses the custom PC Caster channel (`mychannel`). The only mode that reliably plays header-locked streams via the proxy. |
+| **Roku Media Player** | The Roku built-in channel (`mediaplayer`). Cannot send custom headers, so streams that need a `Referer` will fail with a `403`. |
+| **Castify** | Experimental (`castify`). May not behave reliably with all streams. |
 
 ## Status bar states
 

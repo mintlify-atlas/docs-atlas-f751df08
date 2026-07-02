@@ -1,7 +1,7 @@
 ---
 title: "How PC Caster Works: Stream Pipeline Architecture"
 sidebarTitle: "How It Works"
-description: "A technical overview of the PC Caster pipeline: stream detection via Playwright, the local HLS proxy with Chrome TLS spoofing, and the Roku ECP channel control flow."
+description: "Technical overview of the PC Caster pipeline: stream detection via Playwright, the local HLS proxy with Chrome TLS spoofing, and Roku ECP channel control."
 ---
 
 PC Caster solves a specific problem — HLS stream CDNs return HTTP 403 to anything that isn't a real browser. Two conditions trigger the block: a missing or wrong `Referer` header, and a non-Chrome TLS fingerprint. Pasting the raw `.m3u8` URL into VLC or a Roku always fails for exactly these reasons. The solution is a three-stage pipeline that runs entirely on your Windows PC, intercepting the stream URL before it leaves the browser, re-serving it with the right credentials, and pushing it to the Roku over plain HTTP the TV can actually read.
@@ -21,7 +21,9 @@ PC Caster solves a specific problem — HLS stream CDNs return HTTP 403 to anyth
 
 ## Stage 1 — Stream detection (`stream_finder.py`)
 
-`stream_finder.py` opens a **visible** Chromium browser via Playwright using `find_streams_interactive`. As soon as the browser navigates to the streaming page, it attaches a request listener with `page.on('request', _record)` to the main page and to every new tab the site opens.
+`stream_finder.py` tries two strategies in sequence. **Strategy 1** (`_scrape_html`) fetches the raw page HTML with `requests` and applies a compiled regex (`M3U8_RE`) to find any `.m3u8` URL sitting literally in the page source. This is fast and costs nothing, but most live-streaming sites build the stream URL dynamically in JavaScript and never expose it in the HTML — so the scrape typically finds nothing and Strategy 2 takes over.
+
+**Strategy 2** (`_sniff_browser`) launches a headless Chromium browser via Playwright and attaches a request listener with `page.on('request', _record)` to the main page and every new tab. The interactive variant (`find_streams_interactive`) opens a **visible** browser instead and lets the user click the server link themselves.
 
 Every intercepted request is checked with `_is_m3u8(url)`, which looks for `.m3u8` in the URL **path portion only** — before the `?` — so tokenised query strings don't cause false negatives or false positives. When a match is found, the listener records the `Referer` and `Origin` headers the browser sent with that request and emits a result dict:
 
@@ -34,7 +36,7 @@ Every intercepted request is checked with `_is_m3u8(url)`, which looks for `.m3u
 }
 ```
 
-The user clicks the server link they want inside the browser. The moment the video player fires its first `.m3u8` request, PC Caster captures it and shows it in the scanner modal. Ad and popup tabs are automatically closed in the background loop so they don't bury the real player window.
+The moment the video player fires its first `.m3u8` request, PC Caster captures it and shows it in the scanner modal. Ad and popup tabs are automatically closed in the background loop so they don't bury the real player window.
 
 ## Stage 2 — Local HLS proxy (`hls_proxy.py`)
 
@@ -85,12 +87,17 @@ Python's built-in `ssl` module (via `urllib3` / `requests`) has a distinctive JA
 
 ## SSDP device discovery
 
-PC Caster finds Roku devices on the LAN automatically, without requiring the user to know the IP address. It sends a UDP M-SEARCH to the multicast address `239.255.255.250:1900` with the Roku-specific search target:
+PC Caster finds Roku devices on the LAN automatically, without requiring the user to know the IP address. It sends a UDP M-SEARCH to the multicast address `239.255.255.250:1900` with two search targets:
 
 ```python pc_caster.py
 SSDP_ADDR = "239.255.255.250"
 SSDP_PORT = 1900
-# Search target sent in the M-SEARCH:  ST: roku:ecp
+
+# Roku devices — well-known Roku-specific SSDP target
+_ssdp_scan("roku:ecp")
+
+# Fire TV / Amazon devices — DIAL multiscreen target
+_ssdp_scan("urn:dial-multiscreen-org:service:dial:1")
 ```
 
 Each device that replies includes a `Location:` header. The IP is extracted from that header with a regex, then a friendly name is fetched from the Roku's ECP device-info endpoint:

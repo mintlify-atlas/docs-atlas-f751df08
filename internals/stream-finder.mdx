@@ -35,7 +35,7 @@ def find_streams(page_url: str, on_log=None, wait: int = 20) -> list[dict]:
 | `origin` | `str` | The `Origin` header. |
 | `label` | `str` | Short human-readable filename, e.g. `index.m3u8`. Capped at 48 characters. |
 
-**Behavior:** Runs Strategy 1 (HTML scrape) first, then Strategy 2 (Playwright headless browser). Results are deduplicated by URL — if the scrape and the browser find the same URL, only the Playwright entry is kept (it has the `Referer`). If `page_url` itself contains `.m3u8` in the path, the function returns it directly without scanning:
+**Behavior:** Runs Strategy 1 (HTML scrape) first, then Strategy 2 (Playwright headless browser). Results are deduplicated by URL — scrape entries are inserted with direct assignment; Playwright entries use `results.setdefault()`, so the scrape entry is preserved if the URL was already found. Both strategies always run. If `page_url` itself contains `.m3u8` in the path, the function returns it directly without scanning:
 
 ```python stream_finder.py
 if _is_m3u8(page_url):

@@ -1,5 +1,5 @@
 ---
-title: "Discover and Manage Roku and Fire TV Devices"
+title: "Discover and Manage Roku and Fire TV Devices on Your LAN"
 sidebarTitle: "Device Management"
 description: "Automatically scan your LAN for Roku and Fire TV devices via SSDP, or add devices manually by IP. Manage saved devices and Fire TV ADB setup."
 ---
@@ -13,7 +13,7 @@ Click **↺ Scan** to scan your network. PC Caster sends two SSDP `M-SEARCH` mul
 - `ST: roku:ecp` — targets Roku devices
 - `ST: urn:dial-multiscreen-org:service:dial:1` — targets Fire TV and other DIAL-compatible devices
 
-The scan runs for 4 seconds (`SSDP_TIMEOUT`) while it waits for devices to respond. For each Roku IP that replies, PC Caster calls `GET http://<ip>:8060/query/device-info` to retrieve the device's user-assigned name (or model name as a fallback). Fire TV devices are listed as `Fire TV (<ip>)`.
+The scan runs for 4 seconds (`SSDP_TIMEOUT = 4`) while it waits for devices to respond. For each Roku IP that replies, PC Caster calls `GET http://<ip>:8060/query/device-info` to retrieve the device's user-assigned name (or model name as a fallback). Fire TV devices are listed as `Fire TV (<ip>)`.
 
 Once the scan completes, the device list is refreshed and any device that was selected before the scan is automatically re-selected.
 

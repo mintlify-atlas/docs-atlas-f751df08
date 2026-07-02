@@ -1,5 +1,5 @@
 ---
-title: "Test the Proxied Stream on Your PC Before Casting"
+title: "Test the Proxied HLS Stream on Your PC Before Casting"
 sidebarTitle: "Test on PC"
 description: "Use the Test on PC button to play the proxied .m3u8 stream in VLC on your Windows PC and confirm it works before sending it to your Roku TV."
 ---
@@ -28,17 +28,17 @@ When you click Test on PC with an `.m3u8` URL in the URL box:
 
 2. **Proxied URL is generated** — The proxy constructs a local URL that routes all requests through itself, injecting the captured `Referer` and a real Chrome TLS fingerprint on every outbound request to the CDN:
    ```
-   http://<PC-LAN-IP>:8011/p.m3u8?u=<b64 stream url>&r=<b64 referer>
+   http://<PC-LAN-IP>:8011/p.m3u8?u=<b64url>&r=<b64referer>
    ```
 
-3. **VLC is launched** — PC Caster checks for VLC at the following paths:
+3. **VLC is launched** — PC Caster checks for VLC at the following paths, in order:
    ```
    C:\Program Files\VideoLAN\VLC\vlc.exe
    C:\Program Files (x86)\VideoLAN\VLC\vlc.exe
    ```
    If VLC is found, it's launched directly with the proxied URL and the stream begins playing.
 
-4. **No VLC found** — If VLC isn't installed in the default location, the proxied URL is copied to your clipboard and a dialog explains how to use it manually.
+4. **No VLC found** — If VLC isn't installed in either default location, the proxied URL is copied to your clipboard and a dialog explains how to use it manually.
 
 ## Installing VLC
 

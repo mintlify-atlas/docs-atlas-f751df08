@@ -1,7 +1,7 @@
 ---
 title: "PC Caster Roku Channel: BrightScript Architecture"
 sidebarTitle: "Roku Channel"
-description: "The PC Caster Roku channel is a sideloaded BrightScript SceneGraph app controlled via Roku ECP. It plays any HLS or MP4 URL handed to it via launch or /input."
+description: "The PC Caster Roku channel is a sideloaded BrightScript SceneGraph app controlled via Roku ECP. Plays any HLS or MP4 URL sent via ECP launch or /input."
 ---
 
 The Roku side of PC Caster is a minimal BrightScript SceneGraph channel that does one thing — play any video URL it receives from the PC via the Roku External Control Protocol (ECP). The channel is sideloaded automatically by the app on first cast, lives in the `roku_receiver/` directory, and is driven entirely from Python without any user interaction on the TV.
@@ -149,7 +149,7 @@ def sideload(ip: str, password: str, zip_bytes: bytes | None = None) -> tuple[bo
     """
 ```
 
-`build_zip()` walks `roku_receiver/` and packs every file into a ZIP archive with `manifest` at the root (the Roku installer requires this). `sideload()` POSTs the archive to the Roku developer web server using HTTP Digest auth:
+`build_zip()` walks `roku_receiver/` and packs every file into a ZIP archive with `manifest` at the root (the Roku installer requires this). `sideload()` POSTs the archive to the Roku developer web server using HTTP Digest authentication — `HTTPDigestAuth('rokudev', password)` from `requests.auth`:
 
 ```
 POST http://<roku-ip>/plugin_install
@@ -163,17 +163,27 @@ Content-Type: multipart/form-data
 DEV_APP_ID = "dev"  # sideloaded channels always launch as 'dev'
 
 def launch(ip: str, stream_url: str, fmt: str = "hls") -> tuple[bool, str]:
+    """Launch the sideloaded channel and tell it what to play."""
     enc = quote(stream_url, safe="")
     ecp = (f"http://{ip}:8060/launch/{DEV_APP_ID}"
            f"?contentId={enc}&mediaType={fmt}")
-    r = requests.post(ecp, timeout=6)
-    return r.status_code == 200, "Launched PC Caster on the TV."
+    try:
+        r = requests.post(ecp, timeout=6)
+        if r.status_code == 200:
+            return True, "Launched PC Caster on the TV."
+        return False, f"Roku ECP returned HTTP {r.status_code}."
+    except Exception as e:
+        return False, str(e)
 
 def input_play(ip: str, stream_url: str, fmt: str = "hls") -> tuple[bool, str]:
+    """Send a new URL to the channel while it's already running (via /input)."""
     enc = quote(stream_url, safe="")
     ecp = f"http://{ip}:8060/input?contentId={enc}&mediaType={fmt}"
-    r = requests.post(ecp, timeout=6)
-    return (r.status_code == 200), f"HTTP {r.status_code}"
+    try:
+        r = requests.post(ecp, timeout=6)
+        return (r.status_code == 200), f"HTTP {r.status_code}"
+    except Exception as e:
+        return False, str(e)
 ```
 
 `launch()` starts the channel from scratch (or restarts it if it was on a different screen). `input_play()` pushes a new URL to the channel while it's already running — the channel switches to the new stream without any visible interruption to the Roku home screen.

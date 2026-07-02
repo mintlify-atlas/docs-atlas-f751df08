@@ -1,7 +1,7 @@
 ---
-title: "Find .m3u8 Streams from Any Web Page"
+title: "Capture .m3u8 Streams from Any Live Streaming Page"
 sidebarTitle: "Find Streams"
-description: "Use the PC Caster stream scanner to capture .m3u8 HLS URLs and their Referer headers from live stream pages using a headless Chromium browser."
+description: "Use PC Caster's stream scanner to capture .m3u8 HLS URLs and their Referer headers from live stream pages using a visible Chromium browser."
 ---
 
 PC Caster's stream scanner works exactly like the "video detector" apps on phones — it opens a real, visible Chromium browser, loads the streaming page you give it, and watches every outgoing network request for `.m3u8` URLs. The moment a player inside that page fires off an HLS request, the scanner captures both the stream URL and the `Referer` header the player sent, and lists them in the scanner dialog for you to choose from.
@@ -57,7 +57,7 @@ PC Caster's `stream_finder.py` uses two detection strategies, tried in order:
 
 **Strategy 1 — Quick HTML scrape** (`requests` + regex): PC Caster fetches the raw page HTML and searches it for any URL matching `.m3u8`. This is instant and free, but it only works if the stream URL is literally written into the page source. Most modern streaming sites build the URL dynamically in JavaScript, so this step typically finds nothing and falls through to strategy 2.
 
-**Strategy 2 — Headless browser sniff** (`find_streams_interactive`, Playwright): A real Chromium browser is launched in visible mode. PC Caster attaches a listener to every network request the browser and all its iframes make. The moment any request URL contains `.m3u8`, the item is captured along with its full request headers (including `Referer`). This mirrors exactly how mobile video-detector apps work and catches streams that are built entirely in JavaScript.
+**Strategy 2 — Visible browser sniff** (`find_streams_interactive`, Playwright): A real Chromium browser is launched in visible mode so you can interact with the page. PC Caster attaches a listener to every network request the browser and all its iframes make. The moment any request URL contains `.m3u8`, the item is captured along with its full request headers (including `Referer`). This mirrors exactly how mobile video-detector apps work and catches streams that are built entirely in JavaScript.
 
 ## One-time Playwright setup
 
@@ -69,6 +69,11 @@ python -m playwright install chromium
 ```
 
 After that, click **🔍 Find .m3u8** again — no further setup is needed.
+
+The scanner raises two special internal tokens if something is missing:
+
+- **`PLAYWRIGHT_MISSING`** — the `playwright` Python package is not installed. Run `pip install playwright`.
+- **`PLAYWRIGHT_NO_BROWSER`** — Playwright is installed but the Chromium binary hasn't been downloaded yet. Run `python -m playwright install chromium`.
 
 <Warning>
   Do not close the browser window yourself. If you close it manually, the scanner may not shut down cleanly. Instead, click **Stop** or **Use selected** inside the scanner dialog to end the session.

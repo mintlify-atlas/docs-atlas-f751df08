@@ -1,7 +1,7 @@
 ---
 title: "HLS Proxy: Chrome TLS Spoofing and Playlist Rewriting"
 sidebarTitle: "HLS Proxy"
-description: "The hls_proxy.py module implements a local ThreadingHTTPServer that re-fetches HLS streams with a Chrome TLS fingerprint and rewrites .m3u8 playlists to stay proxied."
+description: "hls_proxy.py: local HTTP server that re-fetches HLS streams with a Chrome TLS fingerprint and rewrites .m3u8 playlists so segment requests stay proxied."
 ---
 
 `hls_proxy.py` is the core of PC Caster's ability to play locked streams. It's a local HTTP server that acts as a transparent relay between the Roku and the CDN, adding the browser credentials the CDN requires. The Roku only ever speaks to `http://<LAN-IP>:8011` over plain HTTP — it never needs to send a custom `Referer`, and it never performs a TLS handshake with the CDN. Both of those problems are handled on the PC side, invisibly, on every request.
@@ -117,18 +117,18 @@ The most important function in the proxy is `_rewrite_playlist`. Without it, the
 `_rewrite_playlist` iterates every line in the M3U8 text and rewrites every URI it finds:
 
 - **Lines starting with `#`:** left unchanged unless they contain a `URI="..."` attribute. Tags like `EXT-X-KEY` (AES encryption keys), `EXT-X-MEDIA`, and `EXT-X-MAP` embed child URLs this way. The inner URI is extracted, made absolute against the upstream base URL, and replaced with a proxy URL.
-- **Bare lines (segment paths):** treated as relative or absolute segment URIs. Each is resolved to an absolute URL with `urljoin(base_url, line)` and then wrapped in a proxy URL.
+- **Bare lines (segment paths):** treated as relative or absolute segment URIs. Each is resolved to an absolute URL with `urljoin(base_url, uri.strip())` and then wrapped in a proxy URL.
 
 ### Example
 
-```m3u8 Before rewriting
+```text Before rewriting
 #EXTM3U
 #EXT-X-KEY:METHOD=AES-128,URI="/keys/abc.key"
 ../seg0.ts
 ../seg1.ts
 ```
 
-```m3u8 After rewriting
+```text After rewriting
 #EXTM3U
 #EXT-X-KEY:METHOD=AES-128,URI="http://192.168.1.50:8011/p.m3u8?u=<b64 key url>&r=<b64 referer>"
 http://192.168.1.50:8011/p.m3u8?u=<b64 seg0 url>&r=<b64 referer>
